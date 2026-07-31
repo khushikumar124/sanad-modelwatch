@@ -18,6 +18,13 @@ def _int_env(name: str, default: int) -> int:
     return int(os.environ.get(name, default))
 
 
+def _bool_env(name: str, default: bool) -> bool:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in ("1", "true", "yes", "on")
+
+
 @dataclass(frozen=True)
 class Config:
     # Storage
@@ -36,6 +43,14 @@ class Config:
     # the ClassifierAdapter's overall check_drift() result to be is_drifted=True.
     classifier_drift_feature_fraction: float = _float_env(
         "MODELWATCH_CLASSIFIER_DRIFT_FEATURE_FRACTION", 0.3
+    )
+
+    # Divide ks_pvalue_threshold by the number of features tested, so testing
+    # many features separately doesn't inflate the false-alarm rate. Set to
+    # false to test each feature at the raw threshold (more sensitive to small
+    # single-feature drift, but noisier -- see classifier_adapter.py).
+    classifier_bonferroni_correction: bool = _bool_env(
+        "MODELWATCH_CLASSIFIER_BONFERRONI_CORRECTION", True
     )
 
     # LLMAdapter: minimum average TF-IDF cosine similarity between actual and

@@ -19,7 +19,11 @@ logger = logging.getLogger(__name__)
 
 
 class LLMConnectionError(Exception):
-    """Raised when the configured LLM backend can't be reached."""
+    """Raised when the configured LLM backend isn't usable -- either it
+    can't be reached at all, or it's reachable but can't serve the
+    requested model (e.g. the model was never pulled). Both are
+    operator-fixable setup problems, and both map to a 503 at the API
+    layer, so they share one exception type."""
 
 
 class LLMClient(ABC):
@@ -65,8 +69,20 @@ class OllamaClient(LLMClient):
             response.raise_for_status()
         except requests.exceptions.ConnectionError as e:
             raise LLMConnectionError(
-                f"could not reach Ollama at {self.base_url} -- is `ollama serve` running "
-                f"and has `ollama pull {self.model}` been run?"
+                f"could not reach Ollama at {self.base_url} -- is `ollama serve` running?"
+            ) from e
+        except requests.exceptions.HTTPError as e:
+            # Ollama is up but rejected the request. The common case by far is
+            # the model never having been pulled, which returns 404 with an
+            # {"error": ...} body -- surface that instead of a raw traceback.
+            detail = ""
+            try:
+                detail = e.response.json().get("error", "")
+            except ValueError:
+                detail = (e.response.text or "").strip()[:200]
+            hint = f" -- try `ollama pull {self.model}`" if e.response.status_code == 404 else ""
+            raise LLMConnectionError(
+                f"Ollama at {self.base_url} returned {e.response.status_code}: {detail}{hint}"
             ) from e
 
         return response.json()["message"]["content"]

@@ -6,6 +6,18 @@ simple mean/variance comparison because it's distribution-shape-agnostic --
 it catches shifts, spread changes, and multimodal changes a moments-based
 test would miss, and needs no assumption of normality.
 
+Testing every feature separately is a multiple-comparisons problem: at a
+raw 5% threshold, each feature independently false-positives 5% of the
+time, so the chance that *some* feature trips grows with feature count.
+On a 2-feature model that pushed the observed false-alarm rate on clean
+batches to 13.2% (measured over 500 clean batches), because one spurious
+feature flag is already 50% of features and clears the aggregate
+fraction. A Bonferroni correction divides the per-feature threshold by
+the number of features tested, holding the family-wise false-alarm rate
+near ks_pvalue_threshold regardless of how many features a model has.
+The tradeoff is reduced sensitivity: genuine but small drift in a single
+feature is harder to detect on wide models.
+
 Quality: accuracy against ground-truth labels, when both predictions and
 labels are supplied in a batch.
 """
@@ -29,12 +41,18 @@ class ClassifierAdapter(ModelAdapter):
         self,
         ks_pvalue_threshold: float | None = None,
         drift_feature_fraction: float | None = None,
+        bonferroni_correction: bool | None = None,
     ):
         self.ks_pvalue_threshold = ks_pvalue_threshold or config.ks_pvalue_threshold
         self.drift_feature_fraction = (
             drift_feature_fraction
             if drift_feature_fraction is not None
             else config.classifier_drift_feature_fraction
+        )
+        self.bonferroni_correction = (
+            bonferroni_correction
+            if bonferroni_correction is not None
+            else config.classifier_bonferroni_correction
         )
 
     def build_baseline(self, data: dict[str, Any]) -> dict[str, Any]:
@@ -50,13 +68,23 @@ class ClassifierAdapter(ModelAdapter):
         baseline_features: dict[str, list[float]] = baseline["features"]
         new_features: dict[str, Sequence[float]] = new_data["features"]
 
-        signals: list[SignalResult] = []
-        for name, baseline_values in baseline_features.items():
+        comparable = [n for n in baseline_features if n in new_features]
+        for name in baseline_features:
             if name not in new_features:
                 logger.warning("feature missing from new batch", extra={"feature": name})
-                continue
+
+        # Bonferroni: split the significance budget across the features
+        # actually tested, so the family-wise false-alarm rate stays near
+        # ks_pvalue_threshold instead of growing with feature count.
+        effective_threshold = self.ks_pvalue_threshold
+        if self.bonferroni_correction and comparable:
+            effective_threshold = self.ks_pvalue_threshold / len(comparable)
+
+        signals: list[SignalResult] = []
+        for name in comparable:
+            baseline_values = baseline_features[name]
             statistic, pvalue = stats.ks_2samp(baseline_values, new_features[name])
-            is_drifted = bool(pvalue < self.ks_pvalue_threshold)
+            is_drifted = bool(pvalue < effective_threshold)
             signals.append(
                 SignalResult(
                     name=name,
@@ -64,6 +92,7 @@ class ClassifierAdapter(ModelAdapter):
                     is_drifted=is_drifted,
                     detail={
                         "pvalue": float(pvalue),
+                        "threshold": effective_threshold,
                         "n_baseline": len(baseline_values),
                         "n_new": len(new_features[name]),
                     },

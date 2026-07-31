@@ -1,14 +1,51 @@
-"""OllamaClient error-handling test. Ollama isn't running in this test
-environment, so this exercises the real connection-refused path rather
-than mocking it -- confirming a clear, actionable error surfaces instead
-of a raw requests traceback."""
+"""OllamaClient error-handling tests.
+
+These deliberately point at a port with no listener rather than relying on
+the real Ollama being absent -- an earlier version used Ollama's own port
+and silently passed only on machines where Ollama wasn't installed, then
+broke the moment it was. Test outcomes shouldn't depend on whether an
+optional service happens to be running.
+"""
 import pytest
 
 from sanad.rag.llm_client import LLMConnectionError, OllamaClient
 
+# Port 9 (discard) is reserved and has no listener on a normal machine.
+UNREACHABLE_URL = "http://127.0.0.1:9"
 
-def test_ollama_client_raises_clear_error_when_unreachable():
-    client = OllamaClient(base_url="http://localhost:11434")
+
+def test_raises_clear_error_when_server_unreachable():
+    client = OllamaClient(base_url=UNREACHABLE_URL)
+
+    with pytest.raises(LLMConnectionError, match="ollama serve"):
+        client.generate("system", "user")
+
+
+def test_raises_clear_error_when_model_not_pulled(httpserver):
+    """Ollama running but the model was never pulled -> 404 with an error
+    body. Must surface an actionable `ollama pull` hint, not a raw
+    requests.HTTPError (which would become an opaque HTTP 500)."""
+    httpserver.expect_request("/api/chat").respond_with_json(
+        {"error": 'model "llama3.2:3b" not found'}, status=404
+    )
+    client = OllamaClient(base_url=httpserver.url_for(""), model="llama3.2:3b")
 
     with pytest.raises(LLMConnectionError, match="ollama pull"):
         client.generate("system", "user")
+
+
+def test_raises_clear_error_on_server_error(httpserver):
+    httpserver.expect_request("/api/chat").respond_with_data("boom", status=500)
+    client = OllamaClient(base_url=httpserver.url_for(""))
+
+    with pytest.raises(LLMConnectionError, match="500"):
+        client.generate("system", "user")
+
+
+def test_returns_content_on_success(httpserver):
+    httpserver.expect_request("/api/chat").respond_with_json(
+        {"message": {"role": "assistant", "content": "hello from the model"}}
+    )
+    client = OllamaClient(base_url=httpserver.url_for(""))
+
+    assert client.generate("system", "user") == "hello from the model"

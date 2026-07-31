@@ -90,13 +90,30 @@ def test_chat_unknown_document_returns_404():
     assert res.status_code == 404
 
 
-def test_summarize_returns_503_when_llm_unreachable(uploaded_doc_id):
+@pytest.fixture
+def llm_unreachable():
+    """Point the app's LLM client at a port with no listener.
+
+    These tests previously relied on Ollama simply not being installed on
+    the machine, which meant they passed by accident and started failing
+    the moment Ollama was installed. Forcing an unreachable URL makes the
+    unavailable-backend path deterministic either way.
+    """
+    from sanad.api import app as app_module
+
+    original = app_module.llm_client.base_url
+    app_module.llm_client.base_url = "http://127.0.0.1:9"  # discard port, no listener
+    yield
+    app_module.llm_client.base_url = original
+
+
+def test_summarize_returns_503_when_llm_unreachable(uploaded_doc_id, llm_unreachable):
     res = client.post(f"/api/documents/{uploaded_doc_id}/summarize")
     assert res.status_code == 503
     assert "ollama" in res.json()["detail"].lower()
 
 
-def test_chat_returns_503_when_llm_unreachable(uploaded_doc_id):
+def test_chat_returns_503_when_llm_unreachable(uploaded_doc_id, llm_unreachable):
     res = client.post(f"/api/documents/{uploaded_doc_id}/chat", json={"question": "What is the notice period?"})
     assert res.status_code == 503
     assert "ollama" in res.json()["detail"].lower()

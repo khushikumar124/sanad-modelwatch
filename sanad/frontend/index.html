@@ -308,9 +308,10 @@ document.getElementById("summarizeBtn").addEventListener("click", async () => {
       renderSummarySection("Penalty Clauses", summary.penalty_clauses) +
       renderSummarySection("Termination Conditions", summary.termination_conditions);
   } catch (err) {
-    statusEl.textContent = err.status === 503
-      ? "Can't reach the local LLM. Make sure Ollama is running (`ollama serve`) and the model is pulled."
-      : "Summarization failed: " + err.message;
+    // The API's 503 detail already names the specific problem (server down
+    // vs. model not pulled) and the command to fix it, so show it verbatim
+    // rather than a generic guess.
+    statusEl.textContent = err.status === 503 ? err.message : "Summarization failed: " + err.message;
     statusEl.className = "status error";
   }
 });
@@ -350,9 +351,7 @@ async function sendChat() {
     }
     appendChatMessage("assistant", `<div class="${bubbleClass}">${escapeHtml(answer.answer)}</div>${sourcesHtml}`);
   } catch (err) {
-    statusEl.textContent = err.status === 503
-      ? "Can't reach the local LLM. Make sure Ollama is running (`ollama serve`) and the model is pulled."
-      : "Question failed: " + err.message;
+    statusEl.textContent = err.status === 503 ? err.message : "Question failed: " + err.message;
     statusEl.className = "status error";
   }
 }
