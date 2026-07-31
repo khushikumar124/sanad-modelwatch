@@ -1,0 +1,417 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ModelWatch</title>
+<script src="chart.min.js"></script>
+<style>
+  :root {
+    --bg: #0b0e14;
+    --panel: #12151d;
+    --panel-border: #232838;
+    --text: #d7dbe5;
+    --text-dim: #7a8194;
+    --accent: #4fd1c5;
+    --accent-dim: #2a7f76;
+    --danger: #f2545b;
+    --danger-dim: #4a2226;
+    --warn: #e9b949;
+    --ok: #4fd17a;
+    --mono: "SF Mono", "Fira Code", Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-size: 13px;
+  }
+  header {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 12px 20px;
+    border-bottom: 1px solid var(--panel-border);
+    background: linear-gradient(180deg, #12151d, #0e1017);
+  }
+  header h1 {
+    font-size: 15px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    margin: 0;
+    color: var(--accent);
+    font-family: var(--mono);
+  }
+  header .dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--ok);
+    box-shadow: 0 0 8px var(--ok);
+    animation: pulse 2s infinite;
+  }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.35; } }
+  select {
+    background: var(--panel);
+    color: var(--text);
+    border: 1px solid var(--panel-border);
+    border-radius: 4px;
+    padding: 6px 10px;
+    font-family: var(--mono);
+    font-size: 12px;
+  }
+  main {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+  .tiles {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 12px;
+  }
+  .tile {
+    background: var(--panel);
+    border: 1px solid var(--panel-border);
+    border-radius: 6px;
+    padding: 12px 14px;
+  }
+  .tile .label {
+    color: var(--text-dim);
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+  .tile .value {
+    font-family: var(--mono);
+    font-size: 24px;
+    margin-top: 4px;
+  }
+  .tile .value.ok { color: var(--ok); }
+  .tile .value.danger { color: var(--danger); }
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--panel-border);
+    border-radius: 6px;
+    padding: 14px 16px;
+  }
+  .panel h2 {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-dim);
+    margin: 0 0 12px 0;
+    font-family: var(--mono);
+  }
+  canvas { max-height: 260px; }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-family: var(--mono);
+    font-size: 12px;
+  }
+  th, td {
+    text-align: left;
+    padding: 6px 8px;
+    border-bottom: 1px solid var(--panel-border);
+  }
+  th {
+    color: var(--text-dim);
+    font-weight: 500;
+    text-transform: uppercase;
+    font-size: 10px;
+    letter-spacing: 0.05em;
+  }
+  tbody tr { cursor: pointer; }
+  tbody tr:hover { background: #171b26; }
+  .badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 3px;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .badge.drifted { background: var(--danger-dim); color: var(--danger); }
+  .badge.clean { background: #113328; color: var(--ok); }
+  .alert-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--panel-border);
+    gap: 12px;
+  }
+  .alert-row:last-child { border-bottom: none; }
+  .alert-msg { font-family: var(--mono); font-size: 12px; color: var(--danger); }
+  .alert-time { color: var(--text-dim); font-size: 11px; white-space: nowrap; }
+  .empty { color: var(--text-dim); font-style: italic; padding: 8px 0; }
+  .grid-2 {
+    display: grid;
+    grid-template-columns: 2fr 1fr;
+    gap: 16px;
+  }
+  @media (max-width: 900px) { .grid-2 { grid-template-columns: 1fr; } }
+
+  /* per-signal breakdown drawer */
+  #signalDrawer {
+    position: fixed;
+    top: 0; right: 0;
+    width: 380px;
+    height: 100%;
+    background: var(--panel);
+    border-left: 1px solid var(--panel-border);
+    padding: 16px;
+    overflow-y: auto;
+    transform: translateX(100%);
+    transition: transform 0.15s ease-out;
+    z-index: 10;
+  }
+  #signalDrawer.open { transform: translateX(0); }
+  #signalDrawer .close-btn {
+    float: right;
+    cursor: pointer;
+    color: var(--text-dim);
+    font-family: var(--mono);
+  }
+  .signal-item {
+    border: 1px solid var(--panel-border);
+    border-radius: 4px;
+    padding: 8px 10px;
+    margin-bottom: 8px;
+    font-family: var(--mono);
+    font-size: 11px;
+  }
+  .signal-item .name { color: var(--accent); word-break: break-word; }
+  .signal-item .val { margin-top: 4px; }
+  .signal-item pre {
+    white-space: pre-wrap;
+    word-break: break-word;
+    margin: 4px 0 0 0;
+    color: var(--text-dim);
+    font-size: 10px;
+  }
+</style>
+</head>
+<body>
+<header>
+  <div class="dot"></div>
+  <h1>ModelWatch</h1>
+  <select id="modelSelect"><option>Loading models...</option></select>
+</header>
+
+<main>
+  <div class="tiles">
+    <div class="tile"><div class="label">Drift Score</div><div class="value" id="tileDrift">&mdash;</div></div>
+    <div class="tile"><div class="label">Quality Score</div><div class="value" id="tileQuality">&mdash;</div></div>
+    <div class="tile"><div class="label">Active Alerts</div><div class="value" id="tileAlerts">&mdash;</div></div>
+    <div class="tile"><div class="label">Version</div><div class="value" id="tileVersion">&mdash;</div></div>
+  </div>
+
+  <div class="panel">
+    <h2>Drift / Quality Trend</h2>
+    <canvas id="trendChart"></canvas>
+  </div>
+
+  <div class="grid-2">
+    <div class="panel">
+      <h2>Run History <span style="color:var(--text-dim); font-weight:normal;">(click a row for signal breakdown)</span></h2>
+      <table>
+        <thead><tr><th>Time</th><th>Ver</th><th>Drift</th><th>Quality</th><th>Status</th></tr></thead>
+        <tbody id="historyBody"><tr><td colspan="5" class="empty">No runs yet</td></tr></tbody>
+      </table>
+    </div>
+    <div class="panel">
+      <h2>Active Alerts</h2>
+      <div id="alertsList"><div class="empty">No active alerts</div></div>
+    </div>
+  </div>
+</main>
+
+<div id="signalDrawer">
+  <span class="close-btn" onclick="closeDrawer()">&times; close</span>
+  <h2 style="margin-top:28px;">Signal Breakdown</h2>
+  <div id="signalList"></div>
+</div>
+
+<script>
+const API_BASE = "";
+const POLL_INTERVAL_MS = 8000;
+let currentModelId = null;
+let currentHistory = [];
+let trendChart = null;
+
+async function fetchJson(path) {
+  const res = await fetch(API_BASE + path);
+  if (!res.ok) throw new Error(`${path} -> ${res.status}`);
+  return res.json();
+}
+
+function fmtScore(v) {
+  return v === null || v === undefined ? "—" : v.toFixed(3);
+}
+
+function fmtTime(iso) {
+  const d = new Date(iso);
+  return d.toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit" });
+}
+
+async function loadModels() {
+  const models = await fetchJson("/models");
+  const select = document.getElementById("modelSelect");
+  const previous = currentModelId;
+  select.innerHTML = "";
+  if (models.length === 0) {
+    select.innerHTML = "<option>No models registered</option>";
+    return;
+  }
+  for (const m of models) {
+    const opt = document.createElement("option");
+    opt.value = m.model_id;
+    opt.textContent = `${m.name} (${m.model_id})`;
+    select.appendChild(opt);
+  }
+  currentModelId = previous && models.some(m => m.model_id === previous) ? previous : models[0].model_id;
+  select.value = currentModelId;
+}
+
+function renderTiles(model, history, activeAlerts) {
+  const latest = history[0];
+  document.getElementById("tileDrift").textContent = latest ? fmtScore(latest.drift_score) : "—";
+  document.getElementById("tileDrift").className = "value" + (latest && latest.is_drifted ? " danger" : " ok");
+  document.getElementById("tileQuality").textContent = latest ? fmtScore(latest.quality_score) : "—";
+  document.getElementById("tileAlerts").textContent = activeAlerts.length;
+  document.getElementById("tileAlerts").className = "value" + (activeAlerts.length > 0 ? " danger" : " ok");
+  document.getElementById("tileVersion").textContent = model ? "v" + model.current_version : "—";
+}
+
+function renderChart(history) {
+  const chronological = [...history].reverse();
+  const labels = chronological.map(r => fmtTime(r.timestamp));
+  const driftData = chronological.map(r => r.drift_score);
+  const qualityData = chronological.map(r => r.quality_score);
+
+  if (!trendChart) {
+    const ctx = document.getElementById("trendChart").getContext("2d");
+    trendChart = new Chart(ctx, {
+      type: "line",
+      data: {
+        labels,
+        datasets: [
+          { label: "Drift Score", data: driftData, borderColor: "#f2545b", backgroundColor: "#f2545b22", tension: 0.25, pointRadius: 2 },
+          { label: "Quality Score", data: qualityData, borderColor: "#4fd1c5", backgroundColor: "#4fd1c522", tension: 0.25, pointRadius: 2 },
+        ],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        scales: {
+          x: { ticks: { color: "#7a8194", maxRotation: 0 }, grid: { color: "#232838" } },
+          y: { min: 0, max: 1, ticks: { color: "#7a8194" }, grid: { color: "#232838" } },
+        },
+        plugins: { legend: { labels: { color: "#d7dbe5" } } },
+      },
+    });
+    document.getElementById("trendChart").parentElement.style.height = "280px";
+  } else {
+    trendChart.data.labels = labels;
+    trendChart.data.datasets[0].data = driftData;
+    trendChart.data.datasets[1].data = qualityData;
+    trendChart.update();
+  }
+}
+
+function renderHistoryTable(history) {
+  const body = document.getElementById("historyBody");
+  if (history.length === 0) {
+    body.innerHTML = '<tr><td colspan="5" class="empty">No runs yet</td></tr>';
+    return;
+  }
+  body.innerHTML = "";
+  history.forEach((run) => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${fmtTime(run.timestamp)}</td>
+      <td>v${run.version}</td>
+      <td>${fmtScore(run.drift_score)}</td>
+      <td>${fmtScore(run.quality_score)}</td>
+      <td><span class="badge ${run.is_drifted ? "drifted" : "clean"}">${run.is_drifted ? "Drifted" : "Clean"}</span></td>
+    `;
+    tr.onclick = () => openDrawer(run);
+    body.appendChild(tr);
+  });
+}
+
+function renderAlerts(alerts) {
+  const list = document.getElementById("alertsList");
+  if (alerts.length === 0) {
+    list.innerHTML = '<div class="empty">No active alerts</div>';
+    return;
+  }
+  list.innerHTML = "";
+  alerts.forEach((a) => {
+    const row = document.createElement("div");
+    row.className = "alert-row";
+    row.innerHTML = `<span class="alert-msg">${a.message}</span><span class="alert-time">${fmtTime(a.created_at)}</span>`;
+    list.appendChild(row);
+  });
+}
+
+function openDrawer(run) {
+  const list = document.getElementById("signalList");
+  list.innerHTML = "";
+  if (!run.signals || run.signals.length === 0) {
+    list.innerHTML = '<div class="empty">No per-signal data for this run</div>';
+  } else {
+    run.signals.forEach((s) => {
+      const el = document.createElement("div");
+      el.className = "signal-item";
+      el.innerHTML = `
+        <div class="name">${s.name}</div>
+        <div class="val">value=${s.value.toFixed(4)} &middot; ${s.is_drifted ? '<span style="color:var(--danger)">DRIFTED</span>' : '<span style="color:var(--ok)">clean</span>'}</div>
+        <pre>${JSON.stringify(s.detail, null, 2)}</pre>
+      `;
+      list.appendChild(el);
+    });
+  }
+  document.getElementById("signalDrawer").classList.add("open");
+}
+
+function closeDrawer() {
+  document.getElementById("signalDrawer").classList.remove("open");
+}
+
+async function refresh() {
+  try {
+    await loadModels();
+    if (!currentModelId) return;
+
+    const [model, history, alerts] = await Promise.all([
+      fetchJson(`/models/${currentModelId}`),
+      fetchJson(`/models/${currentModelId}/history`),
+      fetchJson(`/alerts?model_id=${currentModelId}&active_only=true`),
+    ]);
+
+    currentHistory = history;
+    renderTiles(model, history, alerts);
+    renderChart(history);
+    renderHistoryTable(history);
+    renderAlerts(alerts);
+  } catch (err) {
+    console.error("dashboard refresh failed", err);
+  }
+}
+
+document.getElementById("modelSelect").addEventListener("change", (e) => {
+  currentModelId = e.target.value;
+  refresh();
+});
+
+refresh();
+setInterval(refresh, POLL_INTERVAL_MS);
+</script>
+</body>
+</html>

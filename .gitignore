@@ -5,4 +5,9 @@ __pycache__/
 .pytest_cache/
 *.db
 .DS_Store
-chroma_db/
+*chroma_db*/
+sanad_uploads/
+
+# Excluded: contains real people's personal data (names, addresses, salaries),
+# not a blank template. Not used by the project. See sanad/README.md.
+sanad/sample_docs/employment/employment_letter_samples.pdf

@@ -73,7 +73,9 @@ class LLMAdapter(ModelAdapter):
             )
 
         avg_similarity = sum(s.value for s in signals) / len(signals)
-        drift_score = 1.0 - avg_similarity
+        # clamp: avg_similarity can round to just over 1.0 for near-identical
+        # text, which would otherwise push drift_score slightly negative
+        drift_score = max(0.0, 1.0 - avg_similarity)
         is_drifted = avg_similarity < self.similarity_threshold
 
         return DriftCheckResult(
