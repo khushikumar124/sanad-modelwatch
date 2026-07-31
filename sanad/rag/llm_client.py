@@ -28,9 +28,16 @@ class LLMConnectionError(Exception):
 
 class LLMClient(ABC):
     @abstractmethod
-    def generate(self, system_prompt: str, user_prompt: str) -> str:
+    def generate(
+        self, system_prompt: str, user_prompt: str, response_schema: dict | None = None
+    ) -> str:
         """Run one system+user prompt through the model and return its
-        text response."""
+        text response.
+
+        response_schema, when given, is a JSON Schema the backend should
+        constrain output to. Backends that can't enforce it may ignore it
+        -- callers must still parse defensively.
+        """
         raise NotImplementedError
 
 
@@ -49,23 +56,29 @@ class OllamaClient(LLMClient):
         self.base_url = base_url or config.ollama_base_url
         self.num_ctx = num_ctx
 
-    def generate(self, system_prompt: str, user_prompt: str) -> str:
+    def generate(
+        self, system_prompt: str, user_prompt: str, response_schema: dict | None = None
+    ) -> str:
+        payload: dict = {
+            "model": self.model,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            "stream": False,
+            # low temperature: extraction/grounded QA should be
+            # deterministic-leaning, not creative
+            "options": {"num_ctx": self.num_ctx, "temperature": 0.1},
+        }
+        if response_schema is not None:
+            # Constrained decoding. Small models routinely emit not-quite-JSON
+            # when merely *asked* for it (observed: an unquoted string value
+            # for "answer"), which threw away otherwise-correct responses.
+            # Ollama enforces the schema during sampling instead.
+            payload["format"] = response_schema
+
         try:
-            response = requests.post(
-                f"{self.base_url}/api/chat",
-                json={
-                    "model": self.model,
-                    "messages": [
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": user_prompt},
-                    ],
-                    "stream": False,
-                    # low temperature: extraction/grounded QA should be
-                    # deterministic-leaning, not creative
-                    "options": {"num_ctx": self.num_ctx, "temperature": 0.1},
-                },
-                timeout=180,
-            )
+            response = requests.post(f"{self.base_url}/api/chat", json=payload, timeout=180)
             response.raise_for_status()
         except requests.exceptions.ConnectionError as e:
             raise LLMConnectionError(

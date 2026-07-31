@@ -41,6 +41,16 @@ UNGROUNDED_CITATION_ANSWER = (
 
 _JSON_OBJECT_RE = re.compile(r"\{.*\}", re.DOTALL)
 
+ANSWER_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "grounded": {"type": "boolean"},
+        "answer": {"type": "string"},
+        "cited_excerpts": {"type": "array", "items": {"type": "integer"}},
+    },
+    "required": ["grounded", "answer", "cited_excerpts"],
+}
+
 
 @dataclass
 class ChatAnswer:
@@ -88,7 +98,7 @@ def _parse_answer(raw: str, hits: list[dict]) -> ChatAnswer:
                 parse_error=True,
             )
 
-    grounded = bool(data.get("grounded", False))
+    model_says_grounded = bool(data.get("grounded", False))
     answer = str(data.get("answer", ""))
     cited_indices = data.get("cited_excerpts") or []
 
@@ -98,7 +108,15 @@ def _parse_answer(raw: str, hits: list[dict]) -> ChatAnswer:
         if isinstance(i, int) and 1 <= i <= len(hits)
     ]
 
-    if grounded and not cited_chunks:
+    # Groundedness is decided by whether the model actually pointed at a real
+    # excerpt, not by its self-reported boolean. Small models get that flag
+    # wrong in both directions -- observed llama3.2:3b returning
+    # "grounded": false alongside a correct answer *and* a valid citation,
+    # which rendered a good answer as a refusal. A citation is checkable;
+    # the model's claim about itself is not.
+    grounded = bool(cited_chunks)
+
+    if model_says_grounded and not cited_chunks:
         logger.warning("model claimed grounded with no valid citation, downgrading to refusal")
         return ChatAnswer(
             answer=UNGROUNDED_CITATION_ANSWER,
@@ -107,6 +125,8 @@ def _parse_answer(raw: str, hits: list[dict]) -> ChatAnswer:
             raw_llm_output=raw,
             parse_error=False,
         )
+    if cited_chunks and not model_says_grounded:
+        logger.info("model cited excerpts but set grounded=false; trusting the citations")
 
     return ChatAnswer(
         answer=answer,
@@ -130,5 +150,9 @@ def ask(
         return ChatAnswer(answer=NO_CONTEXT_ANSWER, grounded=False, retrieved_chunks=[])
 
     user_prompt = _build_user_prompt(hits, question)
-    raw = llm_client.generate(system_prompt=CHATBOT_SYSTEM_PROMPT, user_prompt=user_prompt)
+    raw = llm_client.generate(
+        system_prompt=CHATBOT_SYSTEM_PROMPT,
+        user_prompt=user_prompt,
+        response_schema=ANSWER_SCHEMA,
+    )
     return _parse_answer(raw, hits)

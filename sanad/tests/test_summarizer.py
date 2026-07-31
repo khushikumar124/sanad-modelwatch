@@ -25,7 +25,7 @@ class FakeLLMClient(LLMClient):
         self.last_system_prompt = None
         self.last_user_prompt = None
 
-    def generate(self, system_prompt: str, user_prompt: str) -> str:
+    def generate(self, system_prompt: str, user_prompt: str, response_schema: dict | None = None) -> str:
         self.last_system_prompt = system_prompt
         self.last_user_prompt = user_prompt
         return self.response

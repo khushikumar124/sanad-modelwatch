@@ -92,7 +92,12 @@ async def upload_document(file: UploadFile = File(...), contract_type: str | Non
         )
 
     doc_id = str(uuid.uuid4())
-    dest = Path(config.upload_dir) / f"{doc_id}{ext}"
+    upload_dir = Path(config.upload_dir)
+    # Recreate per-request rather than only at import: the directory can go
+    # away under a long-running server (temp cleaners, a manual rm), and a
+    # missing directory shouldn't turn every later upload into a 500.
+    upload_dir.mkdir(parents=True, exist_ok=True)
+    dest = upload_dir / f"{doc_id}{ext}"
     dest.write_bytes(await file.read())
 
     ingested = ingest_document(str(dest), doc_id, vector_store)

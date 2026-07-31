@@ -21,13 +21,13 @@ class FakeLLMClient(LLMClient):
         self.response = response
         self.called = False
 
-    def generate(self, system_prompt: str, user_prompt: str) -> str:
+    def generate(self, system_prompt: str, user_prompt: str, response_schema: dict | None = None) -> str:
         self.called = True
         return self.response
 
 
 class NeverCalledLLMClient(LLMClient):
-    def generate(self, system_prompt: str, user_prompt: str) -> str:
+    def generate(self, system_prompt: str, user_prompt: str, response_schema: dict | None = None) -> str:
         raise AssertionError("LLM should not be called when there is no retrieved context")
 
 
@@ -90,6 +90,30 @@ def test_grounded_claim_with_no_citation_is_downgraded_to_refusal(indexed_doc_id
     assert result.grounded is False
     assert result.cited_chunks == []
     assert result.answer != "Some confident-sounding answer."
+
+
+def test_valid_citation_outweighs_a_false_grounded_flag(indexed_doc_id):
+    """Regression test from live testing: llama3.2:3b returned
+    "grounded": false alongside a correct answer AND a valid citation,
+    which rendered a good answer as a refusal. A citation is checkable
+    against the retrieved chunks; the model's claim about itself is not,
+    so the citation wins.
+    """
+    store, doc_id = indexed_doc_id
+    response = json.dumps(
+        {
+            "grounded": False,
+            "answer": "According to excerpt [1], payment is made per milestone.",
+            "cited_excerpts": [1],
+        }
+    )
+    client = FakeLLMClient(response)
+
+    result = ask(doc_id, "What are the payment terms?", store, client)
+
+    assert result.grounded is True
+    assert len(result.cited_chunks) == 1
+    assert "milestone" in result.answer
 
 
 def test_malformed_output_fails_safe(indexed_doc_id):

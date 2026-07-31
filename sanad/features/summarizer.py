@@ -32,6 +32,27 @@ Respond with ONLY a single JSON object, no markdown code fences, no commentary b
 
 _JSON_OBJECT_RE = re.compile(r"\{.*\}", re.DOTALL)
 
+_STRING_LIST = {"type": "array", "items": {"type": "string"}}
+SUMMARY_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "parties": _STRING_LIST,
+        "key_obligations": _STRING_LIST,
+        "important_dates": _STRING_LIST,
+        "notice_period": {"type": ["string", "null"]},
+        "penalty_clauses": _STRING_LIST,
+        "termination_conditions": _STRING_LIST,
+    },
+    "required": [
+        "parties",
+        "key_obligations",
+        "important_dates",
+        "notice_period",
+        "penalty_clauses",
+        "termination_conditions",
+    ],
+}
+
 
 @dataclass
 class ContractSummary:
@@ -92,5 +113,9 @@ def _parse_summary(raw: str) -> ContractSummary:
 
 def summarize(document_text: str, llm_client: LLMClient) -> ContractSummary:
     user_prompt = f"Contract text:\n\n{document_text}"
-    raw = llm_client.generate(system_prompt=SUMMARIZATION_SYSTEM_PROMPT, user_prompt=user_prompt)
+    raw = llm_client.generate(
+        system_prompt=SUMMARIZATION_SYSTEM_PROMPT,
+        user_prompt=user_prompt,
+        response_schema=SUMMARY_SCHEMA,
+    )
     return _parse_summary(raw)

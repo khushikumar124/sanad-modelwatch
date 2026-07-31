@@ -146,13 +146,31 @@ actual scanned document).
 
 ## Known limitations
 
-- **Local LLM quality.** `llama3.2:3b` is small and won't always reliably
-  stay inside the JSON schema the summarizer/chatbot prompts require. Both
-  features detect this (`parse_error=True`) and fail safe rather than
-  return garbage, but that means you can occasionally get "couldn't
-  produce a valid answer" even when the document does contain the answer
-  — a model-following-instructions failure, not a grounding failure. A
-  larger model (e.g. Mistral 7B) reduces this at the cost of speed/memory.
+- **The chatbot over-refuses on `llama3.2:3b`.** This is the biggest
+  practical limitation, and it's measured, not theoretical. Running the
+  18-pair golden set against a live `llama3.2:3b` scored an average
+  answer similarity of **0.458**, and inspecting the worst cases showed
+  the losses are almost entirely *false refusals* — questions whose
+  answers are plainly in the document ("What is the term of this lease?",
+  "What law governs this agreement?") came back as "the document does not
+  address this question". Retrieval was verified to be surfacing the
+  correct clause in these cases, so this is the model failing to use or
+  cite the excerpt, not a RAG failure. When it does answer, it answers
+  well (best case scored 0.880 against the expected answer).
+
+  The design errs deliberately in this direction: an answer with no valid
+  citation is downgraded to a refusal (see `features/chatbot.py`), so the
+  system fails toward "I don't know" rather than toward confident
+  invention. A larger model (e.g. Mistral 7B) should recover much of the
+  lost recall at the cost of speed and memory.
+
+- **JSON compliance is enforced, not requested.** Both features send a
+  JSON Schema via Ollama's `format` parameter so output is constrained
+  during sampling. Before this, `llama3.2:3b` would intermittently emit
+  invalid JSON (observed: an unquoted string value for `answer`) and a
+  correct answer would be thrown away by the parser. The defensive
+  parsing and `parse_error` flag remain as a backstop for backends that
+  can't enforce a schema.
 - **No multi-turn conversation.** Each chat question is answered
   independently; there's no conversation history, so a follow-up like
   "what about the deposit?" after a previous question has no context of
@@ -183,4 +201,8 @@ actual scanned document).
   `LLMAdapter`'s TF-IDF similarity (see ModelWatch's own README) measures
   vocabulary overlap with the golden set's expected answers, not semantic
   correctness — a correct paraphrase can score as more "drifted" than a
-  wrong answer that happens to reuse the same words.
+  wrong answer that happens to reuse the same words. Note the measured
+  baseline of 0.458 sits fairly close to the default drift threshold of
+  0.35, so there is limited headroom before normal variation trips an
+  alert; raise `MODELWATCH_LLM_SIMILARITY_THRESHOLD` or improve the
+  chatbot's answer rate before reading much into small movements.
