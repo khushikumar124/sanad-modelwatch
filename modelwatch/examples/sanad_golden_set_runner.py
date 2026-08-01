@@ -128,13 +128,22 @@ def main() -> None:
     parser.add_argument(
         "--interval", type=float, default=None, help="if set, re-run every N seconds instead of once"
     )
+    parser.add_argument(
+        "--limit",
+        type=int,
+        default=None,
+        help="only use the first N golden pairs. A full run is one local-model call per pair "
+        "(~1 min each on a 3B model), which is too slow to show live -- use this for demos.",
+    )
     args = parser.parse_args()
+
+    golden_set = GOLDEN_SET[: args.limit] if args.limit else GOLDEN_SET
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
     while True:
         try:
-            result = run_once(args.sanad_url, args.modelwatch_url)
+            result = run_once(args.sanad_url, args.modelwatch_url, golden_set=golden_set)
             print(
                 f"drift_score={result['drift_score']:.3f} "
                 f"quality_score={result['quality_score']} "
