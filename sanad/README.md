@@ -75,13 +75,14 @@ Install Ollama from [ollama.com](https://ollama.com) or `brew install
 ollama`, then pull the default model and start the server:
 
 ```bash
-ollama pull llama3.2:3b
+ollama pull phi3:3.8b
 ollama serve   # or just open the Ollama app
 ```
 
-`llama3.2:3b` is the configured default — chosen for a 16GB-RAM laptop
-with no discrete GPU (see `rag/llm_client.py` for the tradeoff notes). Set
-`SANAD_OLLAMA_MODEL` to use a different one.
+`phi3:3.8b` is the configured default — sized for a 16GB-RAM laptop with
+no discrete GPU, and measurably better than `llama3.2:3b` on this task
+(0.536 vs 0.458 average golden-set answer similarity; see known
+limitations). Set `SANAD_OLLAMA_MODEL` to use a different one.
 
 **3. Python environment:**
 
@@ -124,11 +125,11 @@ All via environment variables (see `config.py`):
 | `SANAD_OCR_DPI`                | `300`               | Rasterization DPI before OCR |
 | `SANAD_EMBEDDING_MODEL`        | `all-MiniLM-L6-v2`  | sentence-transformers model |
 | `SANAD_CHROMA_DB_PATH`          | `sanad_chroma_db`   | ChromaDB persistence directory |
-| `SANAD_RETRIEVAL_TOP_K`          | `4`                 | Chunks retrieved per chat question |
+| `SANAD_RETRIEVAL_TOP_K`          | `6`                 | Chunks retrieved per chat question (4 was measurably too few — see limitations) |
 | `SANAD_API_HOST` / `SANAD_API_PORT` | `0.0.0.0` / `8100` | API bind address |
 | `SANAD_UPLOAD_DIR`                | `sanad_uploads`     | Where uploaded files are saved |
 | `SANAD_OLLAMA_BASE_URL`            | `http://localhost:11434` | Ollama server |
-| `SANAD_OLLAMA_MODEL`                | `llama3.2:3b`       | Model Ollama is asked to run |
+| `SANAD_OLLAMA_MODEL`                | `phi3:3.8b`         | Model Ollama is asked to run |
 
 ## Testing
 
@@ -146,23 +147,46 @@ actual scanned document).
 
 ## Known limitations
 
-- **The chatbot over-refuses on `llama3.2:3b`.** This is the biggest
-  practical limitation, and it's measured, not theoretical. Running the
-  18-pair golden set against a live `llama3.2:3b` scored an average
-  answer similarity of **0.458**, and inspecting the worst cases showed
-  the losses are almost entirely *false refusals* — questions whose
-  answers are plainly in the document ("What is the term of this lease?",
-  "What law governs this agreement?") came back as "the document does not
-  address this question". Retrieval was verified to be surfacing the
-  correct clause in these cases, so this is the model failing to use or
-  cite the excerpt, not a RAG failure. When it does answer, it answers
-  well (best case scored 0.880 against the expected answer).
+- **The chatbot still over-refuses**, though less than it used to, and
+  the causes turned out to be mixed. On a 7-question probe where every
+  answer is provably in the document:
 
-  The design errs deliberately in this direction: an answer with no valid
+  | | `retrieval_top_k=4` | `top_k=6` (current) |
+  |---|---|---|
+  | `llama3.2:3b` | 4/7 | 4/7 |
+  | `phi3:3.8b` | 4/7 | **5/7** |
+
+  Two distinct failure causes were found by checking retrieval directly
+  rather than assuming:
+
+  1. **Retrieval misses.** "What is the term of this lease?" failed on
+     both models because the clause containing "11 Months" ranked *6th*
+     by cosine distance, so a top-4 window never showed it to the model.
+     The model refused correctly — it was never given the answer. Raising
+     `SANAD_RETRIEVAL_TOP_K` to 6 fixed this specific question. The root
+     cause is that the clause sits inside a large merged chunk covering
+     several topics, which dilutes its embedding; better chunk sizing
+     would be the deeper fix.
+  2. **Model misses.** "Does this agreement create an employer-employee
+     relationship?" fails even though retrieval puts the answering clause
+     ("8. Nature of Relationship") at rank 1. That one is the model not
+     using what it was given.
+
+  An earlier version of this section claimed retrieval had been verified
+  correct for all these failures. That was wrong: it had been checked on
+  one question and generalised. Case 1 above is the counter-example.
+
+  The design errs deliberately toward refusing: an answer with no valid
   citation is downgraded to a refusal (see `features/chatbot.py`), so the
-  system fails toward "I don't know" rather than toward confident
-  invention. A larger model (e.g. Mistral 7B) should recover much of the
-  lost recall at the cost of speed and memory.
+  system fails toward "I don't know" rather than confident invention.
+
+  The 7-question probe is too small to separate the two models on its own
+  — 5/7 vs 4/7 is a single question. On the full 18-pair golden set the
+  gap is clearer: **phi3:3.8b at top_k=6 scores 0.536 average answer
+  similarity, versus 0.458 for llama3.2:3b at top_k=4**, which is why
+  phi3 is now the default. (That comparison changes both the model and
+  the retrieval window together — it measures the shipped configuration,
+  not the model in isolation.)
 
 - **JSON compliance is enforced, not requested.** Both features send a
   JSON Schema via Ollama's `format` parameter so output is constrained
@@ -202,7 +226,7 @@ actual scanned document).
   vocabulary overlap with the golden set's expected answers, not semantic
   correctness — a correct paraphrase can score as more "drifted" than a
   wrong answer that happens to reuse the same words. Note the measured
-  baseline of 0.458 sits fairly close to the default drift threshold of
+  baseline of 0.536 sits fairly close to the default drift threshold of
   0.35, so there is limited headroom before normal variation trips an
   alert; raise `MODELWATCH_LLM_SIMILARITY_THRESHOLD` or improve the
   chatbot's answer rate before reading much into small movements.

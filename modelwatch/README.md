@@ -144,6 +144,47 @@ model plus running a drifted check produces exactly one alert.
   startup (safe because the two built-in adapters are stateless), but a
   custom adapter with real internal state would need to handle this itself
   via `attach_adapter()`.
+- **The LLM detector can only separate models whose quality gap exceeds
+  its own run-to-run noise.** This was measured, and it's the sharpest
+  limitation of the LLM path. Repeated golden-set runs against Sanad with
+  the *same* model (`phi3:3.8b`) scored 0.539, 0.491 and 0.497 — a spread
+  of roughly 0.05, from LLM nondeterminism plus sensitivity to which
+  subset of pairs is used. Swapping the chatbot to `llama3.2:3b` moved
+  quality by only ~0.02, i.e. **less than the noise floor**. No threshold
+  setting separates those two models honestly: at 0.35 neither run flags,
+  and at 0.50 the healthy baseline flags too.
+
+  With a model from a genuinely different class the signal is
+  unambiguous. Swapping Sanad's chatbot from `phi3:3.8b` to
+  `qwen2.5:0.5b` and back, at the **default** 0.35 threshold:
+
+  | step | quality | is_drifted | alerts |
+  |---|---|---|---|
+  | baseline (phi3) | 0.558 | no | 0 |
+  | swapped to qwen2.5:0.5b | **0.261** | **yes** | 1 |
+  | after retrain, back on phi3 | 0.517 | no | 0 |
+
+  That is a 0.30 drop — six times the ~0.05 noise floor — so it clears
+  the threshold with room to spare, and `trigger_retrain` bumped the
+  model to v2 and resolved the alert. Reproduce with:
+  `python -m modelwatch.examples.simulate_drift_demo --drift-model qwen2.5:0.5b --limit 5`
+
+  Practical consequences:
+  - Calibrate `MODELWATCH_LLM_SIMILARITY_THRESHOLD` against the *same*
+    set of pairs you will check with — a `--limit`ed subset has a
+    different baseline than the full golden set.
+  - Only trust the LLM detector for regressions substantially larger than
+    ~0.05. For the drift demo, use a model in a clearly different class
+    (e.g. `qwen2.5:0.5b`), not a same-size sibling.
+  - Averaging several runs per check, rather than one, would lower the
+    noise floor and is the obvious improvement here.
+
+  A more robust design would also store the baseline's own achieved
+  quality at registration and flag *relative* drops, removing the manual
+  calibration step; the adapter can't do that today because
+  `build_baseline` only receives the golden set, never any model output
+  to score against it.
+
 - **LLMAdapter uses TF-IDF, not a neural embedding.** This is a deliberate
   dependency choice — it keeps ModelWatch itself free of torch/
   sentence-transformers regardless of what the monitored application uses

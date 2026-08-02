@@ -5,8 +5,9 @@ action (swap the model back) -> retrain resets the baseline and clears
 the alert -> a follow-up check confirms recovery.
 
 Requires Sanad's API, ModelWatch's API, and Ollama all running, plus a
-second model genuinely different from Sanad's configured default -- e.g.
-`ollama pull mistral:7b` or `ollama pull qwen2.5:0.5b`.
+second model genuinely different from Sanad's configured default.
+`qwen2.5:0.5b` is the recommended one: it is a small download (~400MB)
+and different enough in class to give an unambiguous signal.
 
 It must be a real second model. Deriving a "degraded" variant of the same
 weights with `ollama create` does NOT work here, and the reason is worth
@@ -17,7 +18,12 @@ by only 0.584 -> 0.565, well inside noise. The script detects this and
 tells you the swap wasn't distinguishable rather than reporting a fake
 drift event.
 
+Measured result at the default 0.35 threshold (phi3:3.8b -> qwen2.5:0.5b
+-> retrain -> phi3:3.8b): quality 0.558 -> 0.261 (alert raised) -> 0.517
+with the alert resolved and the model bumped to v2.
+
 Usage:
+    ollama pull qwen2.5:0.5b
     python -m modelwatch.examples.simulate_drift_demo --drift-model qwen2.5:0.5b --limit 5
 """
 from __future__ import annotations
@@ -73,9 +79,9 @@ def main() -> None:
     parser.add_argument(
         "--drift-model",
         required=True,
-        help="a different Ollama model to swap to, simulating drift. This does not have to be "
-        "a separate download -- `ollama create` can derive a behaviourally different variant "
-        "from a model you already have (see the README).",
+        help="a different Ollama model to swap to, simulating drift. Must be a real second "
+        "model in a clearly different class (qwen2.5:0.5b works well); a same-size sibling "
+        "moves quality less than the detector's noise floor. See the module docstring.",
     )
     parser.add_argument(
         "--limit",
@@ -105,9 +111,13 @@ def main() -> None:
     drifted_result = run_once(args.sanad_url, args.modelwatch_url, golden_set=golden_set, session=session)
     _print_check("drifted", drifted_result)
     if not drifted_result["is_drifted"]:
+        # Restore before bailing out: leaving Sanad pointed at the drift
+        # model (which the operator may then delete) silently breaks the app.
+        set_sanad_model(session, args.sanad_url, good_model)
         print(
             "note: the swapped model didn't trigger drift detection -- try a model that's "
-            "more different in behavior/quality from the original for a clearer demo."
+            f"more different in behavior/quality from the original for a clearer demo. "
+            f"Sanad has been restored to '{good_model}'."
         )
         sys.exit(0)
 
