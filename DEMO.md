@@ -4,28 +4,23 @@ Everything below has been run end to end. Follow it top to bottom.
 
 ## 0. Start (do this ~5 min before)
 
-Three processes. Each in its own terminal, from the repo root.
+One command starts Ollama, ModelWatch and Sanad together, waits until all
+three answer, and prints the URLs:
 
 ```bash
-ollama serve
+./run.sh
 ```
+
+To stop them again:
 
 ```bash
-source .venv/bin/activate && uvicorn modelwatch.api.app:app --port 8000
+./run.sh --stop
 ```
 
-```bash
-source .venv/bin/activate && uvicorn sanad.api.app:app --port 8100
-```
-
-Check all three are alive:
-
-```bash
-curl -s -o /dev/null -w "sanad %{http_code}\n" http://localhost:8100/api/documents && curl -s -o /dev/null -w "modelwatch %{http_code}\n" http://localhost:8000/models && curl -s -o /dev/null -w "ollama %{http_code}\n" http://localhost:11434/api/tags
-```
-
-> **If Sanad returns 500 on upload**, its data directory was removed while it
-> was running. Restart the Sanad process — that is the whole fix.
+`run.sh` frees the ports before starting, so re-running it is always safe.
+That also clears the one failure mode worth knowing about: **if Sanad
+returns 500 on upload**, its data directory was removed while it was
+running — just re-run `./run.sh`.
 
 Two tabs open: `http://localhost:8100/` (Sanad) and
 `http://localhost:8000/dashboard/` (ModelWatch).
