@@ -108,11 +108,14 @@ Currently populated:
 
 - `rental/` — 2 real Indian rental/lease agreement templates
 - `freelance/` — 5 real Indian freelance/consultancy/service agreement templates
-- `employment/` — **empty.** The only file initially dropped here turned
-  out to be a compilation of real people's real signed offer letters
-  (names, home addresses, salaries) rather than a blank template, and was
-  excluded from the project entirely rather than processed. Add a proper
-  blank employment offer-letter template here to fill this gap.
+- `employment/` — an anonymised compilation of 16 Indian offer letters.
+  The file originally dropped here held real candidates' names, home
+  addresses and salaries, so it was rebuilt with dummy personal details
+  before being used: company names, job titles, dates and salary figures
+  are kept, since those aren't personal to an individual. Verified before
+  inclusion — no real name, street address, phone, Aadhaar or PAN
+  survives. Because it holds many letters rather than one contract,
+  golden-set questions for it are scoped by employer.
 
 ## Configuration
 
