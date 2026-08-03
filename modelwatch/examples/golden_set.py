@@ -5,13 +5,12 @@ Every expected_answer here is grounded in the actual text of the sample
 contract it's paired with (verified by reading the extracted/chunked
 text directly, not written from assumption) -- see each source_file.
 
-Coverage: rental and freelance/service contracts, drawn from India-specific
-templates. Employment has no pairs yet: the only file dropped into
-sample_docs/employment/ turned out to be a compilation of real people's
-real offer letters (not a template) and was excluded from the project
-entirely -- see project history. Once a proper blank employment template
-is added to sample_docs/employment/, add its pairs here following the
-same pattern.
+Coverage: all three contract types -- rental, employment, and
+freelance/service -- drawn from India-specific documents. The employment
+file is an anonymised compilation of 16 offer letters: the original
+contained real candidates' names, addresses and salaries, and was rebuilt
+with dummy personal details (company names, job titles, dates and salary
+figures kept, since those aren't personal to an individual).
 """
 from __future__ import annotations
 
@@ -181,6 +180,48 @@ GOLDEN_SET: list[GoldenPair] = [
             "No. The Freelancer agrees that they are an independent contractor, not an employee of "
             "the Client Company/LLP, and is responsible for reporting their own income to the "
             "appropriate authorities."
+        ),
+    },
+    # -- employment_letter_samples.pdf (anonymised compilation of 16 Indian
+    # offer letters). Questions are scoped by employer because the file holds
+    # many letters, so an unscoped "what is the probation period?" has several
+    # different correct answers.
+    {
+        "contract_type": "employment",
+        "source_file": "sanad/sample_docs/employment/employment_letter_samples.pdf",
+        "prompt": "At Infifresh Foods, what is the probation period?",
+        "expected_answer": (
+            "Upon joining, employment is subject to a probation period of 3 months, after "
+            "successful completion of which employment is confirmed by the Company."
+        ),
+    },
+    {
+        "contract_type": "employment",
+        "source_file": "sanad/sample_docs/employment/employment_letter_samples.pdf",
+        "prompt": "What notice is needed to end employment during probation at Infifresh Foods?",
+        "expected_answer": (
+            "During the probation period either the Company or the employee may terminate "
+            "employment with 10 days' notice, or by payment or deduction of the equivalent "
+            "proportionate remuneration instead."
+        ),
+    },
+    {
+        "contract_type": "employment",
+        "source_file": "sanad/sample_docs/employment/employment_letter_samples.pdf",
+        "prompt": "What annual remuneration does the Infifresh Foods offer letter state?",
+        "expected_answer": (
+            "The annual remuneration is INR 4,70,000 per annum, broken down in Annexure 1 and "
+            "paid monthly in arrears after any withholdings required under law."
+        ),
+    },
+    {
+        "contract_type": "employment",
+        "source_file": "sanad/sample_docs/employment/employment_letter_samples.pdf",
+        "prompt": "In the Wingreens World letter, how long is probation and what notice must the employee give?",
+        "expected_answer": (
+            "Probation is 90 days from the date of joining. During probation the employer may "
+            "terminate without notice and without assigning a reason, while termination by the "
+            "employee requires 15 days' notice to the organization."
         ),
     },
     # -- service_agreement_sample.pdf (Service Provider Agreement, India-governed) --
