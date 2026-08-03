@@ -146,10 +146,14 @@ model plus running a drifted check produces exactly one alert.
   via `attach_adapter()`.
 - **The LLM detector can only separate models whose quality gap exceeds
   its own run-to-run noise.** This was measured, and it's the sharpest
-  limitation of the LLM path. Repeated golden-set runs against Sanad with
-  the *same* model (`phi3:3.8b`) scored 0.539, 0.491 and 0.497 — a spread
-  of roughly 0.05, from LLM nondeterminism plus sensitivity to which
-  subset of pairs is used. Swapping the chatbot to `llama3.2:3b` moved
+  limitation of the LLM path. Golden-set runs against Sanad with the
+  *same* model (`phi3:3.8b`) scored 0.539, 0.491 and 0.497 — a spread of
+  roughly 0.05. Note where that spread does and does not come from:
+  back-to-back runs with no model reload are deterministic (verified —
+  two consecutive runs produced character-identical answers and the same
+  0.5385 score, because `temperature=0.1` plus schema-constrained
+  decoding is effectively greedy). The variance appears across model
+  *reloads* and across different subsets of pairs. Swapping the chatbot to `llama3.2:3b` moved
   quality by only ~0.02, i.e. **less than the noise floor**. No threshold
   setting separates those two models honestly: at 0.35 neither run flags,
   and at 0.50 the healthy baseline flags too.
