@@ -11,6 +11,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from modelwatch.api.adapter_registry import ADAPTER_REGISTRY, build_adapter
@@ -129,6 +130,14 @@ def get_versions(model_id: str):
     if engine.get_model(model_id) is None:
         raise HTTPException(status_code=404, detail=f"model '{model_id}' not found")
     return engine.get_versions(model_id)
+
+
+@app.get("/", include_in_schema=False)
+def _root_to_dashboard():
+    """The dashboard lives under /dashboard, so a bare host:port 404s --
+    which reads as "the server is broken" rather than "wrong path".
+    Send the root there instead."""
+    return RedirectResponse(url="/dashboard/")
 
 
 _DASHBOARD_DIR = Path(__file__).resolve().parent.parent / "dashboard"
