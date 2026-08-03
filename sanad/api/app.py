@@ -1,14 +1,21 @@
 """Sanad REST API: upload a contract, summarize it, chat with it.
 
 Thin HTTP layer over the shared ingestion pipeline and the two features.
-Ingested documents live in an in-memory registry keyed by doc_id -- this
-is a single-process demo app, not a multi-user service, so that's enough;
-restarting the server means re-uploading documents.
+
+Ingested documents live in an in-memory registry keyed by doc_id, backed
+by a small JSON record written next to each uploaded file. The registry is
+rebuilt from those records at startup, so a restart doesn't invalidate a
+doc_id that a browser is still holding -- previously that surfaced as
+"document ... not found" on a document the user had just uploaded
+successfully. Chunks and embeddings already persist in ChromaDB, so
+nothing is re-extracted or re-embedded on restore.
 """
 from __future__ import annotations
 
+import json
 import logging
 import uuid
+from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -46,25 +53,85 @@ llm_client = OllamaClient()
 Path(config.upload_dir).mkdir(parents=True, exist_ok=True)
 
 
+@dataclass
 class DocumentRecord:
-    def __init__(self, ingested: IngestedDocument, filename: str, contract_type: str | None):
-        self.ingested = ingested
-        self.filename = filename
-        self.contract_type = contract_type
-        self.uploaded_at = datetime.now(timezone.utc).isoformat()
+    """What the API needs to serve an already-ingested document.
+
+    Kept flat and JSON-serializable rather than wrapping IngestedDocument,
+    so a record can be written to disk on upload and read back on startup
+    without re-running extraction or re-embedding.
+    """
+
+    doc_id: str
+    filename: str
+    contract_type: str | None
+    chunk_count: int
+    used_ocr: bool
+    uploaded_at: str
+    text: str
+    source_path: str
 
     def to_response(self) -> DocumentResponse:
         return DocumentResponse(
-            doc_id=self.ingested.doc_id,
+            doc_id=self.doc_id,
             filename=self.filename,
             contract_type=self.contract_type,
-            chunk_count=len(self.ingested.chunks),
-            used_ocr=self.ingested.used_ocr,
+            chunk_count=self.chunk_count,
+            used_ocr=self.used_ocr,
             uploaded_at=self.uploaded_at,
+        )
+
+    @classmethod
+    def from_ingested(
+        cls, ingested: IngestedDocument, filename: str, contract_type: str | None
+    ) -> "DocumentRecord":
+        return cls(
+            doc_id=ingested.doc_id,
+            filename=filename,
+            contract_type=contract_type,
+            chunk_count=len(ingested.chunks),
+            used_ocr=ingested.used_ocr,
+            uploaded_at=datetime.now(timezone.utc).isoformat(),
+            text=ingested.text,
+            source_path=ingested.source_path,
         )
 
 
 documents: dict[str, DocumentRecord] = {}
+
+
+def _sidecar_path(doc_id: str) -> Path:
+    return Path(config.upload_dir) / f"{doc_id}.json"
+
+
+def _persist(record: DocumentRecord) -> None:
+    """Write a record beside its uploaded file.
+
+    Without this the registry is process-memory only, so restarting the
+    server silently invalidates every doc_id a browser is already holding
+    -- the user sees "document ... not found" on a document they just
+    uploaded successfully. The chunks themselves already persist in
+    ChromaDB; this is the metadata and extracted text that went with them.
+    """
+    try:
+        _sidecar_path(record.doc_id).write_text(json.dumps(asdict(record)))
+    except OSError as e:
+        logger.warning("could not persist document record", extra={"doc_id": record.doc_id, "err": str(e)})
+
+
+def _restore_documents() -> None:
+    upload_dir = Path(config.upload_dir)
+    if not upload_dir.is_dir():
+        return
+    for sidecar in upload_dir.glob("*.json"):
+        try:
+            documents[sidecar.stem] = DocumentRecord(**json.loads(sidecar.read_text()))
+        except (OSError, ValueError, TypeError) as e:
+            logger.warning("skipping unreadable record", extra={"file": sidecar.name, "err": str(e)})
+    if documents:
+        logger.info("restored documents from disk", extra={"count": len(documents)})
+
+_restore_documents()
 
 app = FastAPI(title="Sanad API")
 app.add_middleware(
@@ -101,8 +168,11 @@ async def upload_document(file: UploadFile = File(...), contract_type: str | Non
     dest.write_bytes(await file.read())
 
     ingested = ingest_document(str(dest), doc_id, vector_store)
-    record = DocumentRecord(ingested, filename=file.filename or dest.name, contract_type=contract_type)
+    record = DocumentRecord.from_ingested(
+        ingested, filename=file.filename or dest.name, contract_type=contract_type
+    )
     documents[doc_id] = record
+    _persist(record)
 
     logger.info("document uploaded", extra={"doc_id": doc_id, "doc_filename": record.filename})
     return record.to_response()
@@ -122,7 +192,8 @@ def get_document(doc_id: str):
 def delete_document(doc_id: str):
     record = _get_record(doc_id)
     vector_store.delete_document(doc_id)
-    Path(record.ingested.source_path).unlink(missing_ok=True)
+    Path(record.source_path).unlink(missing_ok=True)
+    _sidecar_path(doc_id).unlink(missing_ok=True)
     del documents[doc_id]
 
 
@@ -130,7 +201,7 @@ def delete_document(doc_id: str):
 def summarize_document(doc_id: str):
     record = _get_record(doc_id)
     try:
-        result = summarize(record.ingested.text, llm_client)
+        result = summarize(record.text, llm_client)
     except LLMConnectionError as e:
         raise HTTPException(status_code=503, detail=str(e))
     return result.to_dict()

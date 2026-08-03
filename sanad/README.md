@@ -207,11 +207,11 @@ actual scanned document).
 - **OCR quality depends on scan quality.** Tesseract (English pack only)
   can misread stamps, seals, handwriting, or the ₹ symbol on lower-quality
   scans; there's no confidence scoring or manual-correction flow.
-- **In-memory document registry.** Uploaded document *metadata* (filename,
-  contract type, full text used for summarization) lives in the API
-  process's memory, not on disk. Restarting the server loses it — the
-  underlying ChromaDB vectors persist to disk, but the API will 404 on the
-  old `doc_id` until you re-upload.
+- **Document metadata is a JSON file per upload, not a database.** Each
+  upload writes a small record next to the stored file, and the registry is
+  rebuilt from those at startup, so a restart no longer invalidates a
+  `doc_id` a browser is holding. It is still flat files with no locking or
+  migrations — fine for one process, not for concurrent writers.
 - **No authentication, no multi-tenancy.** One shared ChromaDB collection
   filtered by `doc_id`; fine for a single-user local demo, not for
   multiple untrusted users sharing one deployment.
