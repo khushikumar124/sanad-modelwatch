@@ -137,6 +137,41 @@
   .summary-section ul { margin: 0; padding-left: 20px; }
   .summary-section .empty { color: var(--text-dim); font-style: italic; }
 
+  .risk-summary {
+    display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px;
+  }
+  .risk-pill {
+    padding: 4px 12px; border-radius: 999px; font-size: 12px; font-weight: 600;
+  }
+  .risk-pill.high { background: #f6e4e0; color: #a34a3a; }
+  .risk-pill.medium { background: #f9edd9; color: #8a6420; }
+  .risk-pill.low { background: #e8eef0; color: #4a6470; }
+  .risk-pill.none { background: var(--ok-soft); color: var(--ok); }
+  .risk-item {
+    border-left: 3px solid var(--border);
+    padding: 10px 0 10px 14px; margin-bottom: 14px;
+  }
+  .risk-item.high { border-left-color: #a34a3a; }
+  .risk-item.medium { border-left-color: #d8a33a; }
+  .risk-item.low { border-left-color: #8fa6b0; }
+  .risk-head { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
+  .risk-label { font-weight: 600; }
+  .risk-sev {
+    font-size: 10px; text-transform: uppercase; letter-spacing: .05em;
+    padding: 2px 7px; border-radius: 3px;
+  }
+  .risk-sev.high { background: #f6e4e0; color: #a34a3a; }
+  .risk-sev.medium { background: #f9edd9; color: #8a6420; }
+  .risk-sev.low { background: #e8eef0; color: #4a6470; }
+  .risk-why { font-size: 13px; color: var(--text); margin-top: 5px; }
+  .risk-affects { font-size: 12px; color: var(--text-dim); margin-top: 3px; font-style: italic; }
+  .risk-excerpt {
+    margin-top: 7px; font-size: 12px; color: var(--text-dim);
+    background: #faf8f4; border-radius: 5px; padding: 8px 10px;
+    border: 1px solid var(--border);
+  }
+  .risk-note { font-size: 12px; color: var(--text-dim); margin-top: 12px; }
+
   #chatLog {
     display: flex;
     flex-direction: column;
@@ -203,15 +238,21 @@
     </div>
   </div>
 
+  <div class="card" id="riskCard" style="display:none;">
+    <h2>2. Clause risk scan</h2>
+    <div class="risk-summary" id="riskSummary"></div>
+    <div id="riskOutput"></div>
+  </div>
+
   <div class="card" id="summaryCard" style="display:none;">
-    <h2>2. Summary</h2>
+    <h2>3. Summary</h2>
     <button id="summarizeBtn" class="secondary">Generate Summary</button>
     <div class="status" id="summaryStatus"></div>
     <div id="summaryOutput" style="margin-top:14px;"></div>
   </div>
 
   <div class="card" id="chatCard" style="display:none;">
-    <h2>3. Ask a question</h2>
+    <h2>4. Ask a question</h2>
     <div id="chatLog"></div>
     <div class="chat-input-row">
       <input type="text" id="chatInput" placeholder="e.g. What is my notice period?" />
@@ -269,11 +310,54 @@ document.getElementById("uploadBtn").addEventListener("click", async () => {
     typeBadge.textContent = doc.contract_type || "uncategorized";
     document.getElementById("chatLog").innerHTML = "";
     document.getElementById("summaryOutput").innerHTML = "";
+    loadRisks();
   } catch (err) {
     statusEl.textContent = "Upload failed: " + err.message;
     statusEl.className = "status error";
   }
 });
+
+function renderRisks(report) {
+  const summary = document.getElementById("riskSummary");
+  const out = document.getElementById("riskOutput");
+  const c = report.counts || {};
+  const total = report.findings.length;
+  if (total === 0) {
+    summary.innerHTML = `<span class="risk-pill none">No flagged clauses</span>`;
+    out.innerHTML = `<div class="risk-note">Scanned ${report.clauses_scanned} clauses against ` +
+      `the rule set and found nothing unusual. That is not a clean bill of health &mdash; ` +
+      `it only means no known pattern matched.</div>`;
+    return;
+  }
+  summary.innerHTML =
+    (c.high ? `<span class="risk-pill high">${c.high} high</span>` : "") +
+    (c.medium ? `<span class="risk-pill medium">${c.medium} medium</span>` : "") +
+    (c.low ? `<span class="risk-pill low">${c.low} low</span>` : "") +
+    `<span class="risk-pill low">${report.clauses_scanned} clauses scanned</span>`;
+
+  out.innerHTML = report.findings.map(f => `
+    <div class="risk-item ${f.severity}">
+      <div class="risk-head">
+        <span class="risk-label">${escapeHtml(f.label)}</span>
+        <span class="risk-sev ${f.severity}">${f.severity}</span>
+      </div>
+      <div class="risk-why">${escapeHtml(f.explanation)}</div>
+      <div class="risk-affects">Tends to disadvantage: ${escapeHtml(f.affects)}</div>
+      <div class="risk-excerpt">${escapeHtml(f.excerpt)}</div>
+    </div>`).join("") +
+    `<div class="risk-note">Flags are pattern matches on the contract's own wording, not legal
+     advice. A flagged clause may be perfectly reasonable in context, and an unflagged contract
+     may still contain terms no rule anticipates.</div>`;
+}
+
+async function loadRisks() {
+  try {
+    renderRisks(await api(`/documents/${currentDocId}/risks`));
+    document.getElementById("riskCard").style.display = "block";
+  } catch (err) {
+    console.error("risk scan failed", err);
+  }
+}
 
 function renderSummarySection(title, items) {
   const list = (items && items.length)

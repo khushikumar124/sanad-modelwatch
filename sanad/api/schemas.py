@@ -37,6 +37,12 @@ class SummaryResponse(BaseModel):
     parse_error: bool
 
 
+class RiskResponse(BaseModel):
+    findings: list[dict[str, Any]]
+    clauses_scanned: int
+    counts: dict[str, int]
+
+
 class ChatResponse(BaseModel):
     answer: str
     grounded: bool

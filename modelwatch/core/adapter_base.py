@@ -47,6 +47,11 @@ class DriftCheckResult:
     quality_score: float | None
     is_drifted: bool
     signals: list[SignalResult] = field(default_factory=list)
+    #: Adapter-defined summary of how the verdict was reached -- spread,
+    #: confidence interval, effective thresholds. Opaque to the engine, which
+    #: only persists it, but it is what lets a reader judge whether a change
+    #: in the score is meaningful rather than noise.
+    statistics: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -54,6 +59,7 @@ class DriftCheckResult:
             "quality_score": self.quality_score,
             "is_drifted": self.is_drifted,
             "signals": [s.to_dict() for s in self.signals],
+            "statistics": self.statistics,
         }
 
 

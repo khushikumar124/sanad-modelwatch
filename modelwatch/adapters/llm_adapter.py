@@ -78,9 +78,39 @@ class LLMAdapter(ModelAdapter):
         drift_score = max(0.0, 1.0 - avg_similarity)
         is_drifted = avg_similarity < self.similarity_threshold
 
+        # Uncertainty on the batch mean. A single quality number invites the
+        # reader to treat any movement as real, but these scores vary across
+        # model reloads and across which pairs are sampled. Reporting the
+        # spread makes "is this change bigger than the noise?" answerable
+        # instead of assumed. The alert rule deliberately stays a simple
+        # mean-vs-threshold comparison -- widening it to require the whole
+        # interval to clear the threshold would silently suppress real
+        # regressions on small golden sets.
+        n = len(signals)
+        if n > 1:
+            mean = avg_similarity
+            variance = sum((s.value - mean) ** 2 for s in signals) / (n - 1)
+            std_dev = variance**0.5
+            std_error = std_dev / (n**0.5)
+        else:
+            std_dev = 0.0
+            std_error = 0.0
+        # 1.96 SE approximates a 95% interval; with a handful of pairs this is
+        # indicative rather than exact (a t-distribution would be stricter).
+        margin = 1.96 * std_error
+
         return DriftCheckResult(
             drift_score=drift_score,
             quality_score=avg_similarity,
             is_drifted=is_drifted,
             signals=signals,
+            statistics={
+                "n_prompts": n,
+                "n_responses": len(matched),
+                "std_dev": std_dev,
+                "std_error": std_error,
+                "ci95_low": max(0.0, avg_similarity - margin),
+                "ci95_high": min(1.0, avg_similarity + margin),
+                "threshold": self.similarity_threshold,
+            },
         )

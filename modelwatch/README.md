@@ -173,6 +173,17 @@ model plus running a drifted check produces exactly one alert.
   model to v2 and resolved the alert. Reproduce with:
   `python -m modelwatch.examples.simulate_drift_demo --drift-model qwen2.5:0.5b --limit 5`
 
+  Every check now reports its own spread alongside the headline score —
+  standard deviation, standard error and a 95% interval — so this is
+  visible rather than something you have to know about. Measured on
+  Sanad with 4 golden pairs: quality 0.496, 95% CI [0.348, 0.644]
+  against a 0.35 threshold. The interval spans the threshold, meaning at
+  that sample size you cannot conclude the system is healthy *or*
+  degraded. The alert rule stays a plain mean-vs-threshold comparison —
+  requiring the whole interval to clear the threshold would suppress real
+  regressions on small golden sets — but the interval tells the reader
+  how much to trust it.
+
   Practical consequences:
   - Calibrate `MODELWATCH_LLM_SIMILARITY_THRESHOLD` against the *same*
     set of pairs you will check with — a `--limit`ed subset has a

@@ -42,7 +42,8 @@ CREATE TABLE IF NOT EXISTS runs (
     drift_score REAL NOT NULL,
     quality_score REAL,
     is_drifted INTEGER NOT NULL,
-    signals_json TEXT NOT NULL
+    signals_json TEXT NOT NULL,
+    statistics_json TEXT NOT NULL DEFAULT '{}'
 );
 
 CREATE TABLE IF NOT EXISTS alerts (
@@ -99,6 +100,12 @@ class Storage:
     def _init_schema(self) -> None:
         with self._cursor() as cur:
             cur.executescript(_SCHEMA)
+            # Add columns introduced after a database was first created.
+            # SQLite has no "ADD COLUMN IF NOT EXISTS", so check first --
+            # otherwise an existing modelwatch.db fails to open.
+            existing = {row[1] for row in cur.execute("PRAGMA table_info(runs)")}
+            if "statistics_json" not in existing:
+                cur.execute("ALTER TABLE runs ADD COLUMN statistics_json TEXT NOT NULL DEFAULT '{}'")
 
     @contextmanager
     def _cursor(self) -> Iterator[sqlite3.Cursor]:
@@ -182,11 +189,12 @@ class Storage:
         quality_score: float | None,
         is_drifted: bool,
         signals: list[dict[str, Any]],
+        statistics: dict[str, Any] | None = None,
     ) -> int:
         with self._cursor() as cur:
             cur.execute(
                 "INSERT INTO runs (model_id, version, timestamp, drift_score, quality_score,"
-                " is_drifted, signals_json) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                " is_drifted, signals_json, statistics_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     model_id,
                     version,
@@ -195,6 +203,7 @@ class Storage:
                     quality_score,
                     int(is_drifted),
                     json.dumps(signals),
+                    json.dumps(statistics or {}),
                 ),
             )
             return cur.lastrowid
@@ -212,6 +221,7 @@ class Storage:
                 d = dict(row)
                 d["is_drifted"] = bool(d["is_drifted"])
                 d["signals"] = json.loads(d.pop("signals_json"))
+                d["statistics"] = json.loads(d.pop("statistics_json", None) or "{}")
                 rows.append(d)
             return rows
 
@@ -224,6 +234,7 @@ class Storage:
             d = dict(row)
             d["is_drifted"] = bool(d["is_drifted"])
             d["signals"] = json.loads(d.pop("signals_json"))
+            d["statistics"] = json.loads(d.pop("statistics_json", None) or "{}")
             return d
 
     # -- alerts ---------------------------------------------------------------

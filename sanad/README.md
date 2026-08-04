@@ -11,6 +11,12 @@ scanned image and get:
   are restricted to the retrieved excerpts, cite which excerpt(s) they
   used, and explicitly refuse rather than guess when the document doesn't
   address the question.
+- **Clause risk scan** — flags clauses that are unusual or work against the
+  weaker party, each quoting the clause it came from. This is the
+  proactive counterpart to the chatbot: it surfaces what you didn't know
+  to ask about, which is the actual problem a non-lawyer has with a
+  contract. Detection is rule-based, not LLM-judged — see
+  `features/risk_flagger.py` for why.
 
 Both features share one ingestion pipeline (extraction → chunking →
 embedding → vector store) — see `rag/pipeline.py`.
@@ -149,6 +155,16 @@ to a flat image, to exercise the Tesseract fallback without needing an
 actual scanned document).
 
 ## Known limitations
+
+- **The risk scan is pattern matching, not legal analysis.** It fires on
+  explicit contract language drawn from patterns common in Indian rental,
+  employment and freelance agreements. It cannot catch a harmful term
+  phrased in wording no rule anticipates, it has no notion of context (a
+  flagged clause may be entirely reasonable), and it is not legal advice.
+  It is deliberately conservative for that reason, and every finding
+  quotes the clause so a reader can judge it themselves. Being
+  deterministic, it is also testable against known inputs — which an
+  LLM-judged version would not be.
 
 - **The chatbot still over-refuses**, though less than it used to, and
   the causes turned out to be mixed. On a 7-question probe where every

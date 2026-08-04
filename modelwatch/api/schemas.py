@@ -41,6 +41,7 @@ class CheckResponse(BaseModel):
     quality_score: float | None
     is_drifted: bool
     signals: list[SignalResponse]
+    statistics: dict[str, Any] = {}
 
 
 class ModelResponse(BaseModel):
@@ -60,6 +61,7 @@ class RunResponse(BaseModel):
     quality_score: float | None
     is_drifted: bool
     signals: list[dict[str, Any]]
+    statistics: dict[str, Any] = {}
 
 
 class AlertResponse(BaseModel):

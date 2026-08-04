@@ -87,6 +87,7 @@ class MonitoringEngine:
             quality_score=result.quality_score,
             is_drifted=result.is_drifted,
             signals=[s.to_dict() for s in result.signals],
+            statistics=result.statistics,
         )
 
         alert_id = None

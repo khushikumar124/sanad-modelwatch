@@ -92,6 +92,9 @@
   }
   .tile .value.ok { color: var(--ok); }
   .tile .value.danger { color: var(--danger); }
+  .tile .sub {
+    font-family: var(--mono); font-size: 10.5px; color: var(--text-dim); margin-top: 3px;
+  }
   .panel {
     background: var(--panel);
     border: 1px solid var(--panel-border);
@@ -205,8 +208,8 @@
 
 <main>
   <div class="tiles">
-    <div class="tile"><div class="label">Drift Score</div><div class="value" id="tileDrift">&mdash;</div></div>
-    <div class="tile"><div class="label">Quality Score</div><div class="value" id="tileQuality">&mdash;</div></div>
+    <div class="tile"><div class="label">Drift Score</div><div class="value" id="tileDrift">&mdash;</div><div class="sub" id="tileDriftSub"></div></div>
+    <div class="tile"><div class="label">Quality Score</div><div class="value" id="tileQuality">&mdash;</div><div class="sub" id="tileQualitySub"></div></div>
     <div class="tile"><div class="label">Active Alerts</div><div class="value" id="tileAlerts">&mdash;</div></div>
     <div class="tile"><div class="label">Version</div><div class="value" id="tileVersion">&mdash;</div></div>
   </div>
@@ -286,6 +289,24 @@ function renderTiles(model, history, activeAlerts) {
   document.getElementById("tileAlerts").textContent = activeAlerts.length;
   document.getElementById("tileAlerts").className = "value" + (activeAlerts.length > 0 ? " danger" : " ok");
   document.getElementById("tileVersion").textContent = model ? "v" + model.current_version : "—";
+
+  // Show the spread behind the headline number. A quality score with no
+  // sense of its own variability invites reading noise as a trend.
+  const st = (latest && latest.statistics) || {};
+  const qsub = document.getElementById("tileQualitySub");
+  const dsub = document.getElementById("tileDriftSub");
+  if (st.ci95_low !== undefined && st.n_prompts > 1) {
+    qsub.textContent = `95% CI ${st.ci95_low.toFixed(3)}–${st.ci95_high.toFixed(3)} · n=${st.n_prompts}`;
+  } else if (st.n_features !== undefined) {
+    qsub.textContent = `${st.n_flagged}/${st.n_features} features flagged`;
+  } else { qsub.textContent = ""; }
+
+  if (st.threshold !== undefined) {
+    dsub.textContent = `alerts below quality ${st.threshold}`;
+  } else if (st.effective_threshold !== undefined) {
+    dsub.textContent = `p < ${Number(st.effective_threshold).toPrecision(2)} per feature` +
+      (st.bonferroni_correction ? " (Bonferroni)" : "");
+  } else { dsub.textContent = ""; }
 }
 
 function renderChart(history) {
@@ -293,6 +314,10 @@ function renderChart(history) {
   const labels = chronological.map(r => fmtTime(r.timestamp));
   const driftData = chronological.map(r => r.drift_score);
   const qualityData = chronological.map(r => r.quality_score);
+  // Drawing the threshold turns "is 0.54 good?" into something the chart
+  // answers on its own, instead of something you look up in the README.
+  const thresholdData = chronological.map(r =>
+    (r.statistics && r.statistics.threshold !== undefined) ? r.statistics.threshold : null);
 
   if (!trendChart) {
     const ctx = document.getElementById("trendChart").getContext("2d");
@@ -303,6 +328,7 @@ function renderChart(history) {
         datasets: [
           { label: "Drift Score", data: driftData, borderColor: "#f2545b", backgroundColor: "#f2545b22", tension: 0.25, pointRadius: 2 },
           { label: "Quality Score", data: qualityData, borderColor: "#4fd1c5", backgroundColor: "#4fd1c522", tension: 0.25, pointRadius: 2 },
+          { label: "Alert threshold", data: thresholdData, borderColor: "#e9b949", borderDash: [6, 4], borderWidth: 1, pointRadius: 0, fill: false },
         ],
       },
       options: {
@@ -320,6 +346,7 @@ function renderChart(history) {
     trendChart.data.labels = labels;
     trendChart.data.datasets[0].data = driftData;
     trendChart.data.datasets[1].data = qualityData;
+    trendChart.data.datasets[2].data = thresholdData;
     trendChart.update();
   }
 }
@@ -363,6 +390,13 @@ function renderAlerts(alerts) {
 function openDrawer(run) {
   const list = document.getElementById("signalList");
   list.innerHTML = "";
+  if (run.statistics && Object.keys(run.statistics).length) {
+    const st = document.createElement("div");
+    st.className = "signal-item";
+    st.innerHTML = `<div class="name">how this verdict was reached</div>` +
+      `<pre>${JSON.stringify(run.statistics, null, 2)}</pre>`;
+    list.appendChild(st);
+  }
   if (!run.signals || run.signals.length === 0) {
     list.innerHTML = '<div class="empty">No per-signal data for this run</div>';
   } else {

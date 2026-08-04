@@ -115,4 +115,12 @@ class ClassifierAdapter(ModelAdapter):
             quality_score=quality_score,
             is_drifted=is_drifted,
             signals=signals,
+            statistics={
+                "n_features": len(signals),
+                "n_flagged": drifted_count,
+                "effective_threshold": effective_threshold,
+                "raw_threshold": self.ks_pvalue_threshold,
+                "bonferroni_correction": self.bonferroni_correction,
+                "drift_feature_fraction": self.drift_feature_fraction,
+            },
         )

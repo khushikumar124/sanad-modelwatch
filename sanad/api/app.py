@@ -27,13 +27,16 @@ from sanad.api.schemas import (
     ChatRequest,
     ChatResponse,
     DocumentResponse,
+    RiskResponse,
     SetModelRequest,
     SetModelResponse,
     SummaryResponse,
 )
 from sanad.config import config
 from sanad.features.chatbot import ask
+from sanad.features.risk_flagger import flag_risks
 from sanad.features.summarizer import summarize
+from sanad.ingestion.chunking import chunk_document
 from sanad.ingestion.extraction import IMAGE_EXTENSIONS
 from sanad.rag.llm_client import LLMConnectionError, OllamaClient
 from sanad.rag.pipeline import IngestedDocument, ingest_document
@@ -205,6 +208,15 @@ def summarize_document(doc_id: str):
     except LLMConnectionError as e:
         raise HTTPException(status_code=503, detail=str(e))
     return result.to_dict()
+
+
+@app.get("/api/documents/{doc_id}/risks", response_model=RiskResponse)
+def get_risks(doc_id: str):
+    """Rule-based scan for unfavourable clauses. No LLM call, so this is
+    instant and its output is reproducible -- re-chunking from the stored
+    text is cheap next to re-extracting the PDF."""
+    record = _get_record(doc_id)
+    return flag_risks(chunk_document(record.text)).to_dict()
 
 
 @app.post("/api/documents/{doc_id}/chat", response_model=ChatResponse)
