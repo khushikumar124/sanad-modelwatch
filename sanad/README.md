@@ -107,6 +107,44 @@ uvicorn sanad.api.app:app --port 8100
 Open `http://localhost:8100/` — upload a contract from `sample_docs/`,
 then generate a summary or ask it a question.
 
+## Authentication
+
+Off by default, so the tests and a local demo need no credentials. To turn
+it on:
+
+```bash
+python -m sanad.create_user khushi
+```
+
+That prompts for a password and prints three variables to export
+(`SANAD_AUTH_ENABLED`, `SANAD_SESSION_SECRET`, `SANAD_USERS`). Export them,
+restart, and the app shows a sign-in screen.
+
+Design notes, since "we added login" is not on its own a security claim:
+
+- Passwords are stored as PBKDF2-HMAC-SHA256 (240k rounds) with a random
+  per-user salt. Never in the repository — credentials live in the
+  environment.
+- Sessions are HMAC-signed cookies, `HttpOnly` (so a script cannot read
+  them) and `SameSite=Lax` (so they are not sent on cross-site POSTs),
+  expiring after 12 hours.
+- Login failures return one message for both an unknown username and a
+  wrong password, and hash anyway when the user does not exist, so neither
+  the message nor the timing reveals which usernames are real.
+- With auth on and no session secret set, startup fails loudly instead of
+  signing sessions with a throwaway key that would log everyone out on
+  each restart.
+- **Both servers bind `127.0.0.1` by default.** They previously bound
+  `0.0.0.0`, which exposed uploaded contracts to everyone on the local
+  network with no authentication at all — a worse hole than the missing
+  login screen.
+
+There is no OAuth. It would put an internet dependency and a third party
+in front of an app whose entire premise is that the document never leaves
+your machine. `sanad/api/auth.py` is structured so a provider can be added
+later: a session records *who* you are, not *how* you proved it, so an
+OAuth callback can mint the same session without touching route protection.
+
 ## Sample documents
 
 Drop PDF/image files into `sample_docs/{rental,employment,freelance}/`.
@@ -135,10 +173,15 @@ All via environment variables (see `config.py`):
 | `SANAD_EMBEDDING_MODEL`        | `all-MiniLM-L6-v2`  | sentence-transformers model |
 | `SANAD_CHROMA_DB_PATH`          | `sanad_chroma_db`   | ChromaDB persistence directory |
 | `SANAD_RETRIEVAL_TOP_K`          | `6`                 | Chunks retrieved per chat question (4 was measurably too few — see limitations) |
-| `SANAD_API_HOST` / `SANAD_API_PORT` | `0.0.0.0` / `8100` | API bind address |
+| `SANAD_API_HOST` / `SANAD_API_PORT` | `127.0.0.1` / `8100` | Bind address; loopback so uploads aren't network-reachable |
 | `SANAD_UPLOAD_DIR`                | `sanad_uploads`     | Where uploaded files are saved |
 | `SANAD_OLLAMA_BASE_URL`            | `http://localhost:11434` | Ollama server |
 | `SANAD_OLLAMA_MODEL`                | `phi3:3.8b`         | Model Ollama is asked to run |
+| `SANAD_AUTH_ENABLED`                 | `false`             | Require sign-in on every API route |
+| `SANAD_SESSION_SECRET`                | *(unset)*           | HMAC key for session cookies; required when auth is on |
+| `SANAD_USERS`                          | *(unset)*           | `name:hash` pairs, comma-separated (see `create_user.py`) |
+| `SANAD_SESSION_TTL_SECONDS`             | `43200`             | Session lifetime (12 hours) |
+| `SANAD_SESSION_COOKIE_SECURE`            | `false`             | Set true when serving over HTTPS |
 
 ## Testing
 

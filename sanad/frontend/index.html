@@ -202,14 +202,52 @@
     margin-top: 6px;
     color: var(--text-dim);
   }
+  #loginOverlay {
+    position: fixed; inset: 0; background: var(--bg);
+    display: none; align-items: center; justify-content: center; z-index: 50;
+  }
+  #loginOverlay.show { display: flex; }
+  .login-box {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 30px 32px; width: 330px;
+  }
+  .login-box h2 { font-family: var(--font); font-size: 21px; margin: 0 0 4px; color: var(--accent); }
+  .login-box p { margin: 0 0 18px; font-size: 12.5px; color: var(--text-dim); }
+  .login-box input { width: 100%; margin-bottom: 10px; }
+  .login-box button { width: 100%; }
+  #loginError { color: var(--warn); font-size: 12.5px; margin-top: 10px; min-height: 16px; }
+  #userBar {
+    display: none; align-items: center; gap: 10px;
+    font-size: 12px; color: var(--text-dim);
+  }
+  #userBar button {
+    background: none; border: 1px solid var(--border); color: var(--text-dim);
+    padding: 3px 10px; font-size: 11.5px;
+  }
+  header { display: flex; justify-content: space-between; align-items: flex-start; }
+
   .chat-input-row { display: flex; gap: 8px; }
   .chat-input-row input[type="text"] { flex: 1; }
 </style>
 </head>
 <body>
+<div id="loginOverlay">
+  <div class="login-box">
+    <h2>Sanad</h2>
+    <p>Sign in to access your contracts.</p>
+    <input type="text" id="loginUser" placeholder="Username" autocomplete="username" />
+    <input type="password" id="loginPass" placeholder="Password" autocomplete="current-password" />
+    <button id="loginBtn">Sign in</button>
+    <div id="loginError"></div>
+  </div>
+</div>
+
 <header>
+  <div>
   <h1>Sanad</h1>
   <p>Upload a rental, employment or freelance agreement. Sanad flags clauses that work against you, summarises the terms in plain language, and answers questions using only the document's own text &mdash; entirely on this machine, so the contract never leaves it.</p>
+  </div>
+  <div id="userBar"><span id="userName"></span><button id="logoutBtn">Sign out</button></div>
 </header>
 
 <main>
@@ -266,8 +304,58 @@
 const API_BASE = "/api";
 let currentDocId = null;
 
+// --- session -------------------------------------------------------------
+async function checkSession() {
+  try {
+    const s = await (await fetch("/api/auth/session")).json();
+    if (!s.auth_enabled) return true;            // auth off: nothing to gate
+    if (s.username) {
+      document.getElementById("userBar").style.display = "flex";
+      document.getElementById("userName").textContent = s.username;
+      return true;
+    }
+    document.getElementById("loginOverlay").classList.add("show");
+    return false;
+  } catch { return true; }
+}
+
+async function doLogin() {
+  const errEl = document.getElementById("loginError");
+  errEl.textContent = "";
+  const res = await fetch("/api/auth/login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      username: document.getElementById("loginUser").value,
+      password: document.getElementById("loginPass").value,
+    }),
+  });
+  if (!res.ok) {
+    errEl.textContent = "Invalid username or password.";
+    document.getElementById("loginPass").value = "";
+    return;
+  }
+  location.reload();
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+  checkSession();
+  document.getElementById("loginBtn").addEventListener("click", doLogin);
+  document.getElementById("loginPass").addEventListener("keydown", e => {
+    if (e.key === "Enter") doLogin();
+  });
+  document.getElementById("logoutBtn").addEventListener("click", async () => {
+    await fetch("/api/auth/logout", { method: "POST" });
+    location.reload();
+  });
+});
+
 async function api(path, options = {}) {
   const res = await fetch(API_BASE + path, options);
+  if (res.status === 401) {
+    document.getElementById("loginOverlay").classList.add("show");
+    throw new Error("Your session expired. Please sign in again.");
+  }
   if (!res.ok) {
     let detail;
     try { detail = (await res.json()).detail; } catch { detail = res.statusText; }

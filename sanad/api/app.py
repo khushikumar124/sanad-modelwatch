@@ -19,15 +19,19 @@ from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
+from sanad.api.auth import COOKIE_NAME, authenticate, create_session, current_user, require_user
 from sanad.api.schemas import (
     ChatRequest,
     ChatResponse,
     DocumentResponse,
+    LoginRequest,
     RiskResponse,
+    SessionResponse,
     SetModelRequest,
     SetModelResponse,
     SummaryResponse,
@@ -54,6 +58,13 @@ vector_store = VectorStore()
 llm_client = OllamaClient()
 
 Path(config.upload_dir).mkdir(parents=True, exist_ok=True)
+
+if config.auth_enabled and not config.session_secret:
+    raise RuntimeError(
+        "SANAD_AUTH_ENABLED is on but SANAD_SESSION_SECRET is unset. Sessions would be "
+        "signed with an ephemeral key, so every restart would silently log everyone out. "
+        "Generate one with: python -c 'import secrets; print(secrets.token_hex(32))'"
+    )
 
 
 @dataclass
@@ -137,9 +148,13 @@ def _restore_documents() -> None:
 _restore_documents()
 
 app = FastAPI(title="Sanad API")
+# The frontend is served from this same origin, so no cross-origin access is
+# needed. A wildcard here would let any page you visit drive this API with
+# your session cookie attached.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[f"http://localhost:{config.api_port}", f"http://127.0.0.1:{config.api_port}"],
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -152,8 +167,48 @@ def _get_record(doc_id: str) -> DocumentRecord:
     return record
 
 
+@app.get("/api/auth/session", response_model=SessionResponse)
+def get_session(request: Request):
+    """Who am I, and is auth even switched on? The frontend uses this to
+    decide whether to show a login screen at all."""
+    return {"auth_enabled": config.auth_enabled, "username": current_user(request)}
+
+
+@app.post("/api/auth/login", response_model=SessionResponse)
+def login(req: LoginRequest, response: Response):
+    if not config.auth_enabled:
+        return {"auth_enabled": False, "username": None}
+    user = authenticate(req.username, req.password)
+    if user is None:
+        # One message for both unknown-user and wrong-password: saying which
+        # was wrong tells an attacker whether a username exists.
+        logger.warning("failed login attempt", extra={"username_attempted": req.username})
+        raise HTTPException(status_code=401, detail="invalid username or password")
+    response.set_cookie(
+        COOKIE_NAME,
+        create_session(user.username),
+        httponly=True,          # not readable from JavaScript, so XSS cannot steal it
+        samesite="lax",         # not sent on cross-site POSTs
+        secure=config.session_cookie_secure,
+        max_age=config.session_ttl_seconds,
+        path="/",
+    )
+    logger.info("login succeeded", extra={"user": user.username})
+    return {"auth_enabled": True, "username": user.username}
+
+
+@app.post("/api/auth/logout", response_model=SessionResponse)
+def logout(response: Response):
+    response.delete_cookie(COOKIE_NAME, path="/")
+    return {"auth_enabled": config.auth_enabled, "username": None}
+
+
 @app.post("/api/documents", response_model=DocumentResponse, status_code=201)
-async def upload_document(file: UploadFile = File(...), contract_type: str | None = Form(None)):
+async def upload_document(
+    file: UploadFile = File(...),
+    contract_type: str | None = Form(None),
+    _user: str | None = Depends(require_user),
+):
     ext = Path(file.filename or "").suffix.lower()
     if ext not in SUPPORTED_EXTENSIONS:
         raise HTTPException(
@@ -182,17 +237,17 @@ async def upload_document(file: UploadFile = File(...), contract_type: str | Non
 
 
 @app.get("/api/documents", response_model=list[DocumentResponse])
-def list_documents():
+def list_documents(_user: str | None = Depends(require_user)):
     return [r.to_response() for r in documents.values()]
 
 
 @app.get("/api/documents/{doc_id}", response_model=DocumentResponse)
-def get_document(doc_id: str):
+def get_document(doc_id: str, _user: str | None = Depends(require_user)):
     return _get_record(doc_id).to_response()
 
 
 @app.delete("/api/documents/{doc_id}", status_code=204)
-def delete_document(doc_id: str):
+def delete_document(doc_id: str, _user: str | None = Depends(require_user)):
     record = _get_record(doc_id)
     vector_store.delete_document(doc_id)
     Path(record.source_path).unlink(missing_ok=True)
@@ -201,7 +256,7 @@ def delete_document(doc_id: str):
 
 
 @app.post("/api/documents/{doc_id}/summarize", response_model=SummaryResponse)
-def summarize_document(doc_id: str):
+def summarize_document(doc_id: str, _user: str | None = Depends(require_user)):
     record = _get_record(doc_id)
     try:
         result = summarize(record.text, llm_client)
@@ -211,7 +266,7 @@ def summarize_document(doc_id: str):
 
 
 @app.get("/api/documents/{doc_id}/risks", response_model=RiskResponse)
-def get_risks(doc_id: str):
+def get_risks(doc_id: str, _user: str | None = Depends(require_user)):
     """Rule-based scan for unfavourable clauses. No LLM call, so this is
     instant and its output is reproducible -- re-chunking from the stored
     text is cheap next to re-extracting the PDF."""
@@ -220,7 +275,9 @@ def get_risks(doc_id: str):
 
 
 @app.post("/api/documents/{doc_id}/chat", response_model=ChatResponse)
-def chat_with_document(doc_id: str, req: ChatRequest):
+def chat_with_document(
+    doc_id: str, req: ChatRequest, _user: str | None = Depends(require_user)
+):
     _get_record(doc_id)  # 404 if unknown, even though vector_store would just return no hits
     try:
         result = ask(doc_id, req.question, vector_store, llm_client)
@@ -230,12 +287,12 @@ def chat_with_document(doc_id: str, req: ChatRequest):
 
 
 @app.get("/api/admin/model", response_model=SetModelResponse)
-def get_active_model():
+def get_active_model(_user: str | None = Depends(require_user)):
     return {"model": llm_client.model}
 
 
 @app.post("/api/admin/model", response_model=SetModelResponse)
-def set_active_model(req: SetModelRequest):
+def set_active_model(req: SetModelRequest, _user: str | None = Depends(require_user)):
     """Swap the live Ollama model at runtime, without restarting the
     server. This exists purely to support ModelWatch's drift-simulation
     demo (see modelwatch/examples/simulate_drift_demo.py) -- swapping the

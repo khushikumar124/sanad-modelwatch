@@ -15,6 +15,16 @@ class DocumentResponse(BaseModel):
     uploaded_at: str
 
 
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+
+class SessionResponse(BaseModel):
+    auth_enabled: bool
+    username: str | None
+
+
 class ChatRequest(BaseModel):
     question: str
 

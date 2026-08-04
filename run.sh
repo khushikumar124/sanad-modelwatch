@@ -53,12 +53,18 @@ for _ in $(seq 1 60); do
 done
 
 MODEL=$(curl -s --max-time 5 "http://localhost:$SANAD_PORT/api/admin/model" 2>/dev/null | sed 's/.*"model":"\([^"]*\)".*/\1/')
+AUTH=$(curl -s --max-time 5 "http://localhost:$SANAD_PORT/api/auth/session" 2>/dev/null | grep -c '"auth_enabled":true')
 HAVE=$(ollama list 2>/dev/null | awk 'NR>1{print $1}' | tr '\n' ' ')
 
 echo
 echo "  Sanad      http://localhost:$SANAD_PORT/"
 echo "  ModelWatch http://localhost:$MW_PORT/dashboard/"
 echo
+if [ "${AUTH:-0}" = "1" ]; then
+  echo "  auth:         ON (sign in required)"
+else
+  echo "  auth:         off  --  enable with: python -m sanad.create_user <name>"
+fi
 echo "  active model: ${MODEL:-unknown}"
 echo "  installed:    ${HAVE:-none}"
 case " $HAVE " in
