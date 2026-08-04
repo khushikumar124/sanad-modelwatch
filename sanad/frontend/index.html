@@ -3,534 +3,828 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Sanad</title>
+<title>Sanad — contract workspace</title>
 <style>
+  /* ------------------------------------------------------------------
+     Design language: a quiet reading desk. Warm paper ground, ink-dark
+     text, one terracotta accent. Contracts are stressful documents, so
+     the interface stays calm and lets severity colour be the only thing
+     that raises its voice.
+     ------------------------------------------------------------------ */
   :root {
-    --bg: #faf7f2;
-    --card: #ffffff;
-    --border: #e7e0d4;
-    --text: #2b2620;
-    --text-dim: #7a7264;
-    --accent: #b5651d;
-    --accent-soft: #f3e3d3;
-    --ok: #2f7d5f;
-    --ok-soft: #e3f1ea;
-    --warn: #a34a3a;
-    --warn-soft: #f6e4e0;
-    --radius: 10px;
-    --font: "Iowan Old Style", "Palatino Linotype", Georgia, serif;
-    --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    --paper:      #f6f2ea;
+    --surface:    #fffdf8;
+    --surface-2:  #faf6ee;
+    --ink:        #221f1a;
+    --ink-soft:   #554f45;
+    --muted:      #857c6d;
+    --line:       #e4dccc;
+    --line-soft:  #efe8db;
+    --accent:     #a85c1a;
+    --accent-ink: #7d4413;
+    --accent-wash:#f4e6d5;
+
+    --high:       #a53d2c;  --high-wash:   #f7e5e1;
+    --medium:     #93701a;  --medium-wash: #f8eed6;
+    --low:        #4d6b78;  --low-wash:    #e8eef1;
+    --good:       #3d6b52;  --good-wash:   #e4efe8;
+
+    --r-sm: 6px; --r: 10px; --r-lg: 16px;
+    --shadow-sm: 0 1px 2px rgba(50,40,25,.05);
+    --shadow:    0 2px 10px rgba(50,40,25,.07);
+    --shadow-lg: 0 12px 40px rgba(50,40,25,.14);
+
+    --serif: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+    --sans:  -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, sans-serif;
   }
   * { box-sizing: border-box; }
+  html, body { height: 100%; }
   body {
-    margin: 0;
-    background: var(--bg);
-    color: var(--text);
-    font-family: var(--font-ui);
-    font-size: 14px;
-    line-height: 1.5;
+    margin: 0; background: var(--paper); color: var(--ink);
+    font-family: var(--sans); font-size: 14px; line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
   }
-  header {
-    padding: 22px 24px 18px;
-    border-bottom: 1px solid var(--border);
-  }
-  header h1 {
-    font-family: var(--font);
-    font-size: 26px;
-    margin: 0 0 2px 0;
-    color: var(--accent);
-  }
-  header p {
-    margin: 0;
-    color: var(--text-dim);
-    font-size: 13px;
-  }
-  main {
-    max-width: 820px;
-    margin: 0 auto;
-    padding: 24px;
-    display: flex;
-    flex-direction: column;
-    gap: 20px;
-  }
-  .card {
-    background: var(--card);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    padding: 20px 22px;
-  }
-  .card h2 {
-    font-family: var(--font);
-    font-size: 18px;
-    margin: 0 0 12px 0;
-  }
-  .upload-row {
-    display: flex;
-    gap: 10px;
-    flex-wrap: wrap;
-    align-items: center;
-  }
-  input[type="file"] {
-    flex: 1;
-    min-width: 200px;
-    font-size: 13px;
-  }
-  select, button, input[type="text"] {
-    font-family: var(--font-ui);
-    font-size: 13px;
-    border-radius: 6px;
-    border: 1px solid var(--border);
-    padding: 8px 12px;
-    background: white;
-    color: var(--text);
-  }
-  button {
-    background: var(--accent);
-    color: white;
-    border: none;
-    cursor: pointer;
-    font-weight: 600;
-  }
-  button:hover { opacity: 0.92; }
-  button:disabled { opacity: 0.5; cursor: not-allowed; }
-  button.secondary {
-    background: var(--accent-soft);
-    color: var(--accent);
-  }
-  .status {
-    margin-top: 10px;
-    font-size: 12.5px;
-    color: var(--text-dim);
-  }
-  .status.error { color: var(--warn); }
-  .doc-meta {
-    display: flex;
-    gap: 16px;
-    flex-wrap: wrap;
-    font-size: 12.5px;
-    color: var(--text-dim);
-  }
-  .badge {
-    display: inline-block;
-    padding: 2px 9px;
-    border-radius: 999px;
-    font-size: 11px;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.03em;
-  }
-  .badge.ok { background: var(--ok-soft); color: var(--ok); }
-  .badge.warn { background: var(--warn-soft); color: var(--warn); }
-  .badge.neutral { background: var(--accent-soft); color: var(--accent); }
+  button, input, select, textarea { font: inherit; color: inherit; }
+  ::selection { background: var(--accent-wash); }
 
-  #hiddenUntilUpload, #hiddenUntilSummary { display: none; }
+  /* ---------- app frame ---------- */
+  .app { display: flex; flex-direction: column; height: 100vh; }
 
-  .summary-section { margin-bottom: 16px; }
-  .summary-section:last-child { margin-bottom: 0; }
-  .summary-section h3 {
-    font-size: 12.5px;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    color: var(--text-dim);
-    margin: 0 0 6px 0;
+  .topbar {
+    display: flex; align-items: center; gap: 10px;
+    padding: 0 18px; height: 58px; flex: none;
+    background: var(--surface); border-bottom: 1px solid var(--line);
   }
-  .summary-section ul { margin: 0; padding-left: 20px; }
-  .summary-section .empty { color: var(--text-dim); font-style: italic; }
+  .brand { display: flex; align-items: baseline; gap: 9px; }
+  .brand .mark {
+    font-family: var(--serif); font-size: 22px; color: var(--accent);
+  }
+  .brand .tag { font-size: 11.5px; color: var(--muted); }
+  .topbar .spacer { flex: 1; }
+  .chip-quiet {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 11.5px; color: var(--muted);
+    border: 1px solid var(--line); border-radius: 999px; padding: 4px 11px;
+    background: var(--surface-2); white-space: nowrap;
+  }
+  .chip-quiet .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--good); }
+  .linkish {
+    background: none; border: none; color: var(--muted); cursor: pointer;
+    font-size: 12px; padding: 5px 9px; border-radius: var(--r-sm);
+  }
+  .linkish:hover { background: var(--surface-2); color: var(--ink); }
 
-  .risk-summary {
-    display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px;
+  .body { display: flex; flex: 1; min-height: 0; }
+
+  /* ---------- sidebar ---------- */
+  .sidebar {
+    width: 274px; flex: none; display: flex; flex-direction: column;
+    background: var(--surface-2); border-right: 1px solid var(--line);
   }
-  .risk-pill {
-    padding: 4px 12px; border-radius: 999px; font-size: 12px; font-weight: 600;
+  .sidebar-head {
+    padding: 16px 16px 10px; display: flex; align-items: center; justify-content: space-between;
   }
-  .risk-pill.high { background: #f6e4e0; color: #a34a3a; }
-  .risk-pill.medium { background: #f9edd9; color: #8a6420; }
-  .risk-pill.low { background: #e8eef0; color: #4a6470; }
-  .risk-pill.none { background: var(--ok-soft); color: var(--ok); }
-  .risk-item {
-    border-left: 3px solid var(--border);
-    padding: 10px 0 10px 14px; margin-bottom: 14px;
+  .sidebar-head h2 {
+    margin: 0; font-size: 11px; text-transform: uppercase; letter-spacing: .1em;
+    color: var(--muted); font-weight: 600;
   }
-  .risk-item.high { border-left-color: #a34a3a; }
-  .risk-item.medium { border-left-color: #d8a33a; }
-  .risk-item.low { border-left-color: #8fa6b0; }
-  .risk-head { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
-  .risk-label { font-weight: 600; }
-  .risk-sev {
-    font-size: 10px; text-transform: uppercase; letter-spacing: .05em;
+  .doclist { flex: 1; overflow-y: auto; padding: 0 10px 10px; }
+  .doclist .none { color: var(--muted); font-size: 12.5px; padding: 8px 11px; font-style: italic; }
+  .doc-item {
+    width: 100%; text-align: left; background: transparent; border: 1px solid transparent;
+    border-radius: var(--r); padding: 10px 11px; margin-bottom: 3px; cursor: pointer;
+    transition: background .12s ease, border-color .12s ease;
+  }
+  .doc-item:hover { background: var(--surface); border-color: var(--line-soft); }
+  .doc-item.active {
+    background: var(--surface); border-color: var(--line); box-shadow: var(--shadow-sm);
+  }
+  .doc-item .name {
+    font-size: 13px; font-weight: 550;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .doc-item .sub {
+    font-size: 11.5px; color: var(--muted); margin-top: 2px;
+    display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+  }
+  .risk-dot { display: inline-flex; align-items: center; gap: 3px; font-weight: 600; }
+  .risk-dot i { width: 6px; height: 6px; border-radius: 50%; display: inline-block; }
+  .risk-dot.high  { color: var(--high); }  .risk-dot.high i  { background: var(--high); }
+  .risk-dot.clear { color: var(--good); }  .risk-dot.clear i { background: var(--good); }
+
+  .sidebar-foot { padding: 10px; border-top: 1px solid var(--line); }
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+    background: var(--accent); color: #fff; border: none; cursor: pointer;
+    border-radius: var(--r-sm); padding: 9px 15px; font-size: 13px; font-weight: 600;
+    transition: background .12s ease, transform .08s ease;
+  }
+  .btn:hover { background: var(--accent-ink); }
+  .btn:active { transform: translateY(1px); }
+  .btn:disabled { opacity: .5; cursor: not-allowed; transform: none; }
+  .btn.ghost { background: var(--surface); color: var(--accent); border: 1px solid var(--line); }
+  .btn.ghost:hover { background: var(--accent-wash); }
+  .btn.wide { width: 100%; }
+
+  /* ---------- main ---------- */
+  .main { flex: 1; min-width: 0; display: flex; flex-direction: column; overflow: hidden; }
+
+  .dochead { padding: 18px 26px 0; flex: none; }
+  .dochead h1 {
+    font-family: var(--serif); font-size: 25px; margin: 0 0 6px; overflow-wrap: anywhere;
+  }
+  .meta { display: flex; flex-wrap: wrap; gap: 7px; align-items: center; }
+  .pill {
+    font-size: 11px; padding: 3px 10px; border-radius: 999px;
+    background: var(--surface-2); color: var(--muted); border: 1px solid var(--line-soft);
+  }
+  .pill.good { background: var(--good-wash); color: var(--good); border-color: transparent; }
+  .pill.warn { background: var(--medium-wash); color: var(--medium); border-color: transparent; }
+  .pill.accent { background: var(--accent-wash); color: var(--accent-ink); border-color: transparent; }
+
+  .tabs {
+    display: flex; gap: 2px; padding: 16px 26px 0; border-bottom: 1px solid var(--line);
+    flex: none; align-items: center;
+  }
+  .tab {
+    background: none; border: none; cursor: pointer; position: relative;
+    padding: 9px 15px 12px; font-size: 13.5px; font-weight: 550; color: var(--muted);
+    border-radius: var(--r-sm) var(--r-sm) 0 0;
+  }
+  .tab:hover { color: var(--ink); background: var(--surface-2); }
+  .tab.active { color: var(--accent-ink); }
+  .tab.active::after {
+    content: ""; position: absolute; left: 12px; right: 12px; bottom: -1px;
+    height: 2px; background: var(--accent); border-radius: 2px;
+  }
+  .tab .count {
+    display: inline-block; margin-left: 6px; font-size: 10.5px; font-weight: 700;
+    padding: 1px 6px; border-radius: 999px; background: var(--line-soft); color: var(--ink-soft);
+  }
+  .tab .count:empty { display: none; }
+  .tab .count.hot { background: var(--high-wash); color: var(--high); }
+
+  .pane { flex: 1; overflow-y: auto; padding: 22px 26px 40px; }
+  .pane[hidden] { display: none; }
+  .wrap { max-width: 780px; }
+  .none { color: var(--muted); font-style: italic; }
+
+  /* ---------- empty / dropzone ---------- */
+  .empty-stage { flex: 1; display: flex; align-items: center; justify-content: center; padding: 30px; }
+  .dropzone {
+    width: 100%; max-width: 560px; text-align: center;
+    border: 1.5px dashed var(--line); border-radius: var(--r-lg);
+    background: var(--surface); padding: 46px 34px;
+    transition: border-color .15s ease, background .15s ease;
+  }
+  .dropzone.drag { border-color: var(--accent); background: var(--accent-wash); }
+  .dropzone h2 { font-family: var(--serif); font-size: 24px; margin: 0 0 8px; }
+  .dropzone p { color: var(--muted); margin: 0 auto 22px; max-width: 400px; font-size: 13.5px; }
+  .dropzone .glyph { font-size: 34px; line-height: 1; margin-bottom: 14px; opacity: .55; }
+  .dz-row { display: flex; gap: 9px; justify-content: center; flex-wrap: wrap; align-items: center; }
+  select.type {
+    background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-sm);
+    padding: 9px 12px; font-size: 13px;
+  }
+  .fineprint { font-size: 11.5px; color: var(--muted); margin-top: 16px; }
+
+  /* ---------- risk cards ---------- */
+  .scanline { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; margin-bottom: 18px; }
+  .sev-pill {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 12px; font-weight: 650; padding: 5px 12px; border-radius: 999px;
+  }
+  .sev-pill.high { background: var(--high-wash); color: var(--high); }
+  .sev-pill.medium { background: var(--medium-wash); color: var(--medium); }
+  .sev-pill.low { background: var(--low-wash); color: var(--low); }
+  .sev-pill.good { background: var(--good-wash); color: var(--good); }
+
+  .risk {
+    background: var(--surface); border: 1px solid var(--line-soft);
+    border-left: 3px solid var(--line); border-radius: var(--r);
+    padding: 15px 17px; margin-bottom: 11px; box-shadow: var(--shadow-sm);
+    transition: box-shadow .15s ease;
+  }
+  .risk:hover { box-shadow: var(--shadow); }
+  .risk.high { border-left-color: var(--high); }
+  .risk.medium { border-left-color: var(--medium); }
+  .risk.low { border-left-color: var(--low); }
+  .risk-top { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .risk-title { font-size: 15px; font-weight: 620; font-family: var(--serif); }
+  .sev-tag {
+    font-size: 9.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .07em;
     padding: 2px 7px; border-radius: 3px;
   }
-  .risk-sev.high { background: #f6e4e0; color: #a34a3a; }
-  .risk-sev.medium { background: #f9edd9; color: #8a6420; }
-  .risk-sev.low { background: #e8eef0; color: #4a6470; }
-  .risk-why { font-size: 13px; color: var(--text); margin-top: 5px; }
-  .risk-affects { font-size: 12px; color: var(--text-dim); margin-top: 3px; font-style: italic; }
-  .risk-excerpt {
-    margin-top: 7px; font-size: 12px; color: var(--text-dim);
-    background: #faf8f4; border-radius: 5px; padding: 8px 10px;
-    border: 1px solid var(--border);
+  .sev-tag.high { background: var(--high-wash); color: var(--high); }
+  .sev-tag.medium { background: var(--medium-wash); color: var(--medium); }
+  .sev-tag.low { background: var(--low-wash); color: var(--low); }
+  .risk-why { color: var(--ink-soft); margin-top: 7px; font-size: 13.5px; }
+  .risk-who { color: var(--muted); font-size: 12.5px; margin-top: 5px; }
+  .risk-quote {
+    margin-top: 11px; font-family: var(--serif); font-size: 13px; color: var(--ink-soft);
+    background: var(--surface-2); border-radius: var(--r-sm); padding: 11px 13px;
+    border-left: 2px solid var(--line);
   }
-  .risk-note { font-size: 12px; color: var(--text-dim); margin-top: 12px; }
+  .disclaimer {
+    margin-top: 18px; font-size: 12px; color: var(--muted); line-height: 1.6;
+    background: var(--surface-2); border: 1px solid var(--line-soft);
+    border-radius: var(--r-sm); padding: 12px 14px;
+  }
 
-  #chatLog {
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-    max-height: 420px;
-    overflow-y: auto;
-    margin-bottom: 12px;
+  /* ---------- summary ---------- */
+  .sum-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 13px; }
+  .sum-card {
+    background: var(--surface); border: 1px solid var(--line-soft); border-radius: var(--r);
+    padding: 15px 17px; box-shadow: var(--shadow-sm);
   }
-  .msg { max-width: 90%; }
-  .msg.user { align-self: flex-end; text-align: right; }
-  .msg .bubble {
-    display: inline-block;
-    padding: 9px 13px;
-    border-radius: 10px;
-    text-align: left;
+  .sum-card h3 {
+    margin: 0 0 9px; font-size: 10.5px; text-transform: uppercase; letter-spacing: .09em;
+    color: var(--muted); font-weight: 650;
   }
-  .msg.user .bubble { background: var(--accent-soft); color: var(--text); }
-  .msg.assistant .bubble { background: #f4f1ea; }
-  .msg.assistant .bubble.refused { background: var(--warn-soft); }
-  .sources {
-    margin-top: 6px;
-    font-size: 12px;
-  }
-  .sources summary { cursor: pointer; color: var(--accent); }
-  .source-item {
-    border-left: 2px solid var(--accent-soft);
-    padding: 4px 10px;
-    margin-top: 6px;
-    color: var(--text-dim);
-  }
-  #loginOverlay {
-    position: fixed; inset: 0; background: var(--bg);
-    display: none; align-items: center; justify-content: center; z-index: 50;
-  }
-  #loginOverlay.show { display: flex; }
-  .login-box {
-    background: var(--card); border: 1px solid var(--border);
-    border-radius: var(--radius); padding: 30px 32px; width: 330px;
-  }
-  .login-box h2 { font-family: var(--font); font-size: 21px; margin: 0 0 4px; color: var(--accent); }
-  .login-box p { margin: 0 0 18px; font-size: 12.5px; color: var(--text-dim); }
-  .login-box input { width: 100%; margin-bottom: 10px; }
-  .login-box button { width: 100%; }
-  #loginError { color: var(--warn); font-size: 12.5px; margin-top: 10px; min-height: 16px; }
-  #userBar {
-    display: none; align-items: center; gap: 10px;
-    font-size: 12px; color: var(--text-dim);
-  }
-  #userBar button {
-    background: none; border: 1px solid var(--border); color: var(--text-dim);
-    padding: 3px 10px; font-size: 11.5px;
-  }
-  header { display: flex; justify-content: space-between; align-items: flex-start; }
+  .sum-card ul { margin: 0; padding-left: 17px; }
+  .sum-card li { margin-bottom: 6px; color: var(--ink-soft); font-size: 13.5px; }
+  .sum-card li:last-child { margin-bottom: 0; }
+  .sum-card .single { font-family: var(--serif); font-size: 18px; }
 
-  .chat-input-row { display: flex; gap: 8px; }
-  .chat-input-row input[type="text"] { flex: 1; }
+  /* ---------- chat ---------- */
+  .chat-scroll { display: flex; flex-direction: column; gap: 15px; margin-bottom: 18px; }
+  .turn { display: flex; flex-direction: column; max-width: 88%; }
+  .turn.you { align-self: flex-end; align-items: flex-end; }
+  .bubble { padding: 11px 15px; border-radius: 14px; font-size: 13.8px; }
+  .turn.you .bubble { background: var(--accent); color: #fff; border-bottom-right-radius: 4px; }
+  .turn.bot .bubble {
+    background: var(--surface); border: 1px solid var(--line-soft);
+    border-bottom-left-radius: 4px; box-shadow: var(--shadow-sm);
+  }
+  .turn.bot .bubble.refused {
+    background: var(--medium-wash); border-color: transparent; color: #6b5312;
+  }
+  .cite { margin-top: 8px; }
+  .cite summary {
+    cursor: pointer; font-size: 12px; color: var(--accent); list-style: none;
+    display: inline-flex; align-items: center; gap: 5px;
+  }
+  .cite summary::-webkit-details-marker { display: none; }
+  .cite-body { margin-top: 7px; border-left: 2px solid var(--accent-wash); padding: 3px 0 3px 12px; }
+  .cite-head { font-size: 11.5px; font-weight: 650; color: var(--ink-soft); }
+  .cite-text { font-family: var(--serif); font-size: 12.5px; color: var(--muted); margin-top: 3px; }
+
+  .suggest { display: flex; gap: 7px; flex-wrap: wrap; margin-bottom: 14px; }
+  .sugg {
+    background: var(--surface); border: 1px solid var(--line); color: var(--ink-soft);
+    border-radius: 999px; padding: 7px 14px; font-size: 12.5px; cursor: pointer;
+    transition: all .12s ease;
+  }
+  .sugg:hover { border-color: var(--accent); color: var(--accent-ink); background: var(--accent-wash); }
+
+  .composer {
+    display: flex; gap: 9px; position: sticky; bottom: 0;
+    background: linear-gradient(180deg, transparent, var(--paper) 22%); padding-top: 10px;
+  }
+  .composer input {
+    flex: 1; background: var(--surface); border: 1px solid var(--line);
+    border-radius: 999px; padding: 12px 18px; font-size: 13.5px; outline: none;
+    transition: border-color .12s ease, box-shadow .12s ease;
+  }
+  .composer input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-wash); }
+  .composer .btn { border-radius: 999px; padding: 11px 20px; }
+
+  /* ---------- loading ---------- */
+  .skel { display: flex; flex-direction: column; gap: 9px; }
+  .skel div {
+    height: 13px; border-radius: 5px;
+    background: linear-gradient(90deg, var(--line-soft) 25%, var(--surface-2) 50%, var(--line-soft) 75%);
+    background-size: 200% 100%; animation: sweep 1.3s infinite;
+  }
+  @keyframes sweep { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+  .thinking { display: inline-flex; gap: 4px; align-items: center; padding: 4px 0; }
+  .thinking i {
+    width: 6px; height: 6px; border-radius: 50%; background: var(--muted);
+    animation: bounce 1.2s infinite;
+  }
+  .thinking i:nth-child(2) { animation-delay: .18s; }
+  .thinking i:nth-child(3) { animation-delay: .36s; }
+  @keyframes bounce { 0%,60%,100% { opacity: .3; transform: translateY(0); } 30% { opacity: 1; transform: translateY(-3px); } }
+
+  /* ---------- toast ---------- */
+  #toasts {
+    position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+    display: flex; flex-direction: column; gap: 8px; z-index: 60; align-items: center;
+  }
+  .toast {
+    background: var(--ink); color: #f8f5ef; padding: 11px 18px; border-radius: 999px;
+    font-size: 13px; box-shadow: var(--shadow-lg); animation: rise .22s ease; max-width: 560px;
+  }
+  .toast.bad { background: var(--high); }
+  @keyframes rise { from { opacity: 0; transform: translateY(9px); } to { opacity: 1; transform: none; } }
+
+  /* ---------- login ---------- */
+  #login {
+    position: fixed; inset: 0; background: var(--paper); z-index: 70;
+    display: none; align-items: center; justify-content: center;
+  }
+  #login.show { display: flex; }
+  .login-card {
+    background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg);
+    padding: 34px; width: 348px; box-shadow: var(--shadow-lg);
+  }
+  .login-card .mark { font-family: var(--serif); font-size: 26px; color: var(--accent); }
+  .login-card p { color: var(--muted); font-size: 13px; margin: 4px 0 20px; }
+  .login-card input {
+    width: 100%; background: var(--surface-2); border: 1px solid var(--line);
+    border-radius: var(--r-sm); padding: 11px 13px; margin-bottom: 10px; outline: none;
+  }
+  .login-card input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-wash); }
+  #loginErr { color: var(--high); font-size: 12.5px; min-height: 17px; margin-top: 9px; }
+
+  @media (max-width: 860px) {
+    .sidebar { display: none; }
+    .pane, .dochead, .tabs { padding-left: 16px; padding-right: 16px; }
+  }
 </style>
 </head>
 <body>
-<div id="loginOverlay">
-  <div class="login-box">
-    <h2>Sanad</h2>
-    <p>Sign in to access your contracts.</p>
+
+<div id="login">
+  <div class="login-card">
+    <div class="mark">Sanad</div>
+    <p>Sign in to reach your contracts.</p>
     <input type="text" id="loginUser" placeholder="Username" autocomplete="username" />
     <input type="password" id="loginPass" placeholder="Password" autocomplete="current-password" />
-    <button id="loginBtn">Sign in</button>
-    <div id="loginError"></div>
+    <button class="btn wide" id="loginBtn">Sign in</button>
+    <div id="loginErr"></div>
   </div>
 </div>
 
-<header>
-  <div>
-  <h1>Sanad</h1>
-  <p>Upload a rental, employment or freelance agreement. Sanad flags clauses that work against you, summarises the terms in plain language, and answers questions using only the document's own text &mdash; entirely on this machine, so the contract never leaves it.</p>
-  </div>
-  <div id="userBar"><span id="userName"></span><button id="logoutBtn">Sign out</button></div>
-</header>
-
-<main>
-  <div class="card" id="uploadCard">
-    <h2>1. Upload a contract</h2>
-    <div class="upload-row">
-      <input type="file" id="fileInput" accept=".pdf,.png,.jpg,.jpeg,.tiff,.tif,.bmp" />
-      <select id="contractType">
-        <option value="">Type (optional)</option>
-        <option value="rental">Rental</option>
-        <option value="employment">Employment</option>
-        <option value="freelance">Freelance / Service</option>
-      </select>
-      <button id="uploadBtn">Upload &amp; Process</button>
+<div class="app">
+  <div class="topbar">
+    <div class="brand">
+      <span class="mark">Sanad</span>
+      <span class="tag">contract workspace</span>
     </div>
-    <div class="status" id="uploadStatus"></div>
+    <div class="spacer"></div>
+    <span class="chip-quiet"><span class="dot"></span>runs on this machine</span>
+    <span class="chip-quiet" id="modelChip" style="display:none"></span>
+    <span id="userBar" style="display:none;align-items:center;gap:4px;">
+      <span class="chip-quiet" id="userName"></span>
+      <button class="linkish" id="logoutBtn">Sign out</button>
+    </span>
   </div>
 
-  <div class="card" id="hiddenUntilUpload">
-    <h2>Document</h2>
-    <div class="doc-meta">
-      <span id="docFilename"></span>
-      <span id="docChunks"></span>
-      <span id="docOcr" class="badge"></span>
-      <span id="docType" class="badge neutral"></span>
-    </div>
-  </div>
+  <div class="body">
+    <aside class="sidebar">
+      <div class="sidebar-head"><h2>Documents</h2><span class="pill" id="docCount">0</span></div>
+      <div class="doclist" id="docList"></div>
+      <div class="sidebar-foot">
+        <button class="btn ghost wide" id="newDocBtn">＋ Add a contract</button>
+      </div>
+    </aside>
 
-  <div class="card" id="riskCard" style="display:none;">
-    <h2>2. Clause risk scan</h2>
-    <div class="risk-summary" id="riskSummary"></div>
-    <div id="riskOutput"></div>
-  </div>
+    <main class="main">
+      <div class="empty-stage" id="stage">
+        <div class="dropzone" id="dropzone">
+          <div class="glyph">📄</div>
+          <h2>Read the contract before you sign it</h2>
+          <p>Sanad flags clauses that work against you, summarises the terms in plain
+             language, and answers questions using only the document's own words.</p>
+          <div class="dz-row">
+            <button class="btn" id="pickBtn">Choose a PDF</button>
+            <select class="type" id="typeSel">
+              <option value="">Type (optional)</option>
+              <option value="rental">Rental</option>
+              <option value="employment">Employment</option>
+              <option value="freelance">Freelance / Service</option>
+            </select>
+          </div>
+          <div class="fineprint">or drop a file here · PDF and scanned images · nothing leaves this machine</div>
+          <input type="file" id="fileInput" accept=".pdf,.png,.jpg,.jpeg,.tiff,.tif,.bmp" hidden />
+        </div>
+      </div>
 
-  <div class="card" id="summaryCard" style="display:none;">
-    <h2>3. Summary</h2>
-    <button id="summarizeBtn" class="secondary">Generate Summary</button>
-    <div class="status" id="summaryStatus"></div>
-    <div id="summaryOutput" style="margin-top:14px;"></div>
-  </div>
+      <div id="workspace" hidden>
+        <div class="dochead">
+          <h1 id="docTitle"></h1>
+          <div class="meta" id="docMeta"></div>
+        </div>
+        <div class="tabs">
+          <button class="tab active" data-pane="risks">Risk scan <span class="count" id="tabRiskCount"></span></button>
+          <button class="tab" data-pane="summary">Summary</button>
+          <button class="tab" data-pane="ask">Ask</button>
+          <span style="flex:1"></span>
+          <button class="linkish" id="deleteBtn" title="Remove this document">Remove</button>
+        </div>
 
-  <div class="card" id="chatCard" style="display:none;">
-    <h2>4. Ask a question</h2>
-    <div id="chatLog"></div>
-    <div class="chat-input-row">
-      <input type="text" id="chatInput" placeholder="e.g. What is my notice period?" />
-      <button id="chatSendBtn">Ask</button>
-    </div>
-    <div class="status" id="chatStatus"></div>
+        <div class="pane" id="pane-risks"><div class="wrap" id="risksBody"></div></div>
+        <div class="pane" id="pane-summary" hidden><div class="wrap" id="summaryBody"></div></div>
+        <div class="pane" id="pane-ask" hidden>
+          <div class="wrap">
+            <div class="suggest" id="suggest"></div>
+            <div class="chat-scroll" id="chatLog"></div>
+            <div class="composer">
+              <input type="text" id="chatInput" placeholder="Ask about a specific term…" />
+              <button class="btn" id="askBtn">Ask</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
   </div>
-</main>
+</div>
+
+<div id="toasts"></div>
 
 <script>
-const API_BASE = "/api";
-let currentDocId = null;
+const API = "/api";
+let docs = [];
+let currentId = null;
+const riskCache = {};   // doc_id -> risk report
+const sumCache = {};    // doc_id -> summary
+const chatCache = {};   // doc_id -> [html]
 
-// --- session -------------------------------------------------------------
-async function checkSession() {
-  try {
-    const s = await (await fetch("/api/auth/session")).json();
-    if (!s.auth_enabled) return true;            // auth off: nothing to gate
-    if (s.username) {
-      document.getElementById("userBar").style.display = "flex";
-      document.getElementById("userName").textContent = s.username;
-      return true;
-    }
-    document.getElementById("loginOverlay").classList.add("show");
-    return false;
-  } catch { return true; }
+/* ---------------- helpers ---------------- */
+function esc(s) { const d = document.createElement("div"); d.textContent = s ?? ""; return d.innerHTML; }
+
+function toast(msg, bad = false) {
+  const t = document.createElement("div");
+  t.className = "toast" + (bad ? " bad" : "");
+  t.textContent = msg;
+  document.getElementById("toasts").appendChild(t);
+  setTimeout(() => t.remove(), bad ? 6500 : 3200);
 }
 
-async function doLogin() {
-  const errEl = document.getElementById("loginError");
-  errEl.textContent = "";
-  const res = await fetch("/api/auth/login", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      username: document.getElementById("loginUser").value,
-      password: document.getElementById("loginPass").value,
-    }),
-  });
-  if (!res.ok) {
-    errEl.textContent = "Invalid username or password.";
-    document.getElementById("loginPass").value = "";
-    return;
-  }
-  location.reload();
+function ago(iso) {
+  const s = (Date.now() - new Date(iso)) / 1000;
+  if (s < 60) return "just now";
+  if (s < 3600) return Math.floor(s / 60) + "m ago";
+  if (s < 86400) return Math.floor(s / 3600) + "h ago";
+  return Math.floor(s / 86400) + "d ago";
 }
-
-document.addEventListener("DOMContentLoaded", () => {
-  checkSession();
-  document.getElementById("loginBtn").addEventListener("click", doLogin);
-  document.getElementById("loginPass").addEventListener("keydown", e => {
-    if (e.key === "Enter") doLogin();
-  });
-  document.getElementById("logoutBtn").addEventListener("click", async () => {
-    await fetch("/api/auth/logout", { method: "POST" });
-    location.reload();
-  });
-});
 
 async function api(path, options = {}) {
-  const res = await fetch(API_BASE + path, options);
+  const res = await fetch(API + path, options);
   if (res.status === 401) {
-    document.getElementById("loginOverlay").classList.add("show");
-    throw new Error("Your session expired. Please sign in again.");
+    document.getElementById("login").classList.add("show");
+    throw new Error("Your session expired — please sign in again.");
   }
   if (!res.ok) {
     let detail;
     try { detail = (await res.json()).detail; } catch { detail = res.statusText; }
-    const err = new Error(detail || `${path} -> ${res.status}`);
+    const err = new Error(detail || (path + " → " + res.status));
     err.status = res.status;
     throw err;
   }
   return res.status === 204 ? null : res.json();
 }
 
-document.getElementById("uploadBtn").addEventListener("click", async () => {
-  const fileInput = document.getElementById("fileInput");
-  const statusEl = document.getElementById("uploadStatus");
-  if (!fileInput.files.length) {
-    statusEl.textContent = "Choose a file first.";
-    statusEl.className = "status error";
+/* ---------------- session ---------------- */
+async function checkSession() {
+  try {
+    const s = await (await fetch("/api/auth/session")).json();
+    if (s.auth_enabled && !s.username) {
+      document.getElementById("login").classList.add("show");
+      return false;
+    }
+    if (s.username) {
+      document.getElementById("userBar").style.display = "inline-flex";
+      document.getElementById("userName").textContent = s.username;
+    }
+    return true;
+  } catch { return true; }
+}
+
+async function doLogin() {
+  const err = document.getElementById("loginErr");
+  err.textContent = "";
+  const res = await fetch("/api/auth/login", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      username: document.getElementById("loginUser").value,
+      password: document.getElementById("loginPass").value,
+    }),
+  });
+  if (!res.ok) {
+    err.textContent = "Invalid username or password.";
+    document.getElementById("loginPass").value = "";
     return;
   }
+  location.reload();
+}
+
+/* ---------------- documents ---------------- */
+function renderDocList() {
+  const list = document.getElementById("docList");
+  document.getElementById("docCount").textContent = docs.length;
+  if (!docs.length) {
+    list.innerHTML = '<div class="none">Nothing here yet.</div>';
+    return;
+  }
+  list.innerHTML = "";
+  docs.slice().reverse().forEach(d => {
+    const b = document.createElement("button");
+    b.className = "doc-item" + (d.doc_id === currentId ? " active" : "");
+    const r = riskCache[d.doc_id];
+    let flag = "";
+    if (r) {
+      flag = r.counts.high
+        ? '<span class="risk-dot high"><i></i>' + r.counts.high + ' high</span>'
+        : '<span class="risk-dot clear"><i></i>clear</span>';
+    }
+    b.innerHTML = '<div class="name">' + esc(d.filename) + '</div>' +
+      '<div class="sub"><span>' + d.chunk_count + ' clauses</span>' + flag +
+      '<span>' + ago(d.uploaded_at) + '</span></div>';
+    b.onclick = () => selectDoc(d.doc_id);
+    list.appendChild(b);
+  });
+}
+
+async function loadDocs(selectId) {
+  docs = await api("/documents");
+  renderDocList();
+  if (selectId) selectDoc(selectId);
+  else if (currentId && docs.some(d => d.doc_id === currentId)) selectDoc(currentId);
+  else if (docs.length) selectDoc(docs[docs.length - 1].doc_id);
+  else showStage();
+}
+
+function showStage() {
+  currentId = null;
+  document.getElementById("stage").style.display = "flex";
+  document.getElementById("workspace").hidden = true;
+  renderDocList();
+}
+
+function selectDoc(id) {
+  const d = docs.find(x => x.doc_id === id);
+  if (!d) return showStage();
+  currentId = id;
+  document.getElementById("stage").style.display = "none";
+  const ws = document.getElementById("workspace");
+  ws.hidden = false;
+  ws.style.display = "flex";
+  ws.style.flexDirection = "column";
+  ws.style.flex = "1";
+  ws.style.minHeight = "0";
+
+  document.getElementById("docTitle").textContent = d.filename;
+  document.getElementById("docMeta").innerHTML =
+    '<span class="pill accent">' + esc(d.contract_type || "uncategorised") + '</span>' +
+    '<span class="pill">' + d.chunk_count + ' clauses</span>' +
+    '<span class="pill ' + (d.used_ocr ? "warn" : "good") + '">' + (d.used_ocr ? "OCR" : "native text") + '</span>' +
+    '<span class="pill">added ' + ago(d.uploaded_at) + '</span>';
+
+  renderDocList();
+  showTab("risks");
+  renderSuggestions(d.contract_type);
+  renderChat();
+  loadRisks(id);
+  if (sumCache[id]) renderSummary(sumCache[id]); else renderSummaryPrompt();
+}
+
+async function upload(file) {
+  if (!file) return;
   const form = new FormData();
-  form.append("file", fileInput.files[0]);
-  const contractType = document.getElementById("contractType").value;
-  if (contractType) form.append("contract_type", contractType);
-
-  statusEl.textContent = "Uploading and processing (extraction, chunking, embedding)...";
-  statusEl.className = "status";
-
+  form.append("file", file);
+  const t = document.getElementById("typeSel").value;
+  if (t) form.append("contract_type", t);
+  toast("Reading the document…");
   try {
     const doc = await api("/documents", { method: "POST", body: form });
-    currentDocId = doc.doc_id;
-    statusEl.textContent = "Done.";
-    document.getElementById("hiddenUntilUpload").style.display = "block";
-    document.getElementById("summaryCard").style.display = "block";
-    document.getElementById("chatCard").style.display = "block";
-    document.getElementById("docFilename").textContent = doc.filename;
-    document.getElementById("docChunks").textContent = `${doc.chunk_count} chunks indexed`;
-    const ocrBadge = document.getElementById("docOcr");
-    ocrBadge.textContent = doc.used_ocr ? "OCR used" : "native text";
-    ocrBadge.className = "badge " + (doc.used_ocr ? "warn" : "ok");
-    const typeBadge = document.getElementById("docType");
-    typeBadge.textContent = doc.contract_type || "uncategorized";
-    document.getElementById("chatLog").innerHTML = "";
-    document.getElementById("summaryOutput").innerHTML = "";
-    loadRisks();
-  } catch (err) {
-    statusEl.textContent = "Upload failed: " + err.message;
-    statusEl.className = "status error";
-  }
-});
-
-function renderRisks(report) {
-  const summary = document.getElementById("riskSummary");
-  const out = document.getElementById("riskOutput");
-  const c = report.counts || {};
-  const total = report.findings.length;
-  if (total === 0) {
-    summary.innerHTML = `<span class="risk-pill none">No flagged clauses</span>`;
-    out.innerHTML = `<div class="risk-note">Scanned ${report.clauses_scanned} clauses against ` +
-      `the rule set and found nothing unusual. That is not a clean bill of health &mdash; ` +
-      `it only means no known pattern matched.</div>`;
-    return;
-  }
-  summary.innerHTML =
-    (c.high ? `<span class="risk-pill high">${c.high} high</span>` : "") +
-    (c.medium ? `<span class="risk-pill medium">${c.medium} medium</span>` : "") +
-    (c.low ? `<span class="risk-pill low">${c.low} low</span>` : "") +
-    `<span class="risk-pill low">${report.clauses_scanned} clauses scanned</span>`;
-
-  out.innerHTML = report.findings.map(f => `
-    <div class="risk-item ${f.severity}">
-      <div class="risk-head">
-        <span class="risk-label">${escapeHtml(f.label)}</span>
-        <span class="risk-sev ${f.severity}">${f.severity}</span>
-      </div>
-      <div class="risk-why">${escapeHtml(f.explanation)}</div>
-      <div class="risk-affects">Tends to disadvantage: ${escapeHtml(f.affects)}</div>
-      <div class="risk-excerpt">${escapeHtml(f.excerpt)}</div>
-    </div>`).join("") +
-    `<div class="risk-note">Flags are pattern matches on the contract's own wording, not legal
-     advice. A flagged clause may be perfectly reasonable in context, and an unflagged contract
-     may still contain terms no rule anticipates.</div>`;
+    currentId = doc.doc_id;
+    await loadDocs(doc.doc_id);
+    toast(doc.filename + " · " + doc.chunk_count + " clauses indexed");
+  } catch (e) { toast(e.message, true); }
 }
 
-async function loadRisks() {
+/* ---------------- tabs ---------------- */
+function showTab(name) {
+  document.querySelectorAll(".tab").forEach(t => t.classList.toggle("active", t.dataset.pane === name));
+  ["risks", "summary", "ask"].forEach(p => {
+    document.getElementById("pane-" + p).hidden = p !== name;
+  });
+  if (name === "ask") setTimeout(() => document.getElementById("chatInput").focus(), 30);
+}
+
+/* ---------------- risks ---------------- */
+async function loadRisks(id) {
+  const body = document.getElementById("risksBody");
+  if (riskCache[id]) return renderRisks(riskCache[id]);
+  body.innerHTML = '<div class="skel"><div style="width:40%"></div><div style="width:90%"></div><div style="width:70%"></div></div>';
   try {
-    renderRisks(await api(`/documents/${currentDocId}/risks`));
-    document.getElementById("riskCard").style.display = "block";
-  } catch (err) {
-    console.error("risk scan failed", err);
-  }
+    const r = await api("/documents/" + id + "/risks");
+    riskCache[id] = r;
+    if (currentId === id) renderRisks(r);
+    renderDocList();
+  } catch (e) { body.innerHTML = '<p class="none">' + esc(e.message) + '</p>'; }
 }
 
-function renderSummarySection(title, items) {
-  const list = (items && items.length)
-    ? `<ul>${items.map(i => `<li>${escapeHtml(i)}</li>`).join("")}</ul>`
-    : `<div class="empty">Not found in the document.</div>`;
-  return `<div class="summary-section"><h3>${title}</h3>${list}</div>`;
+function renderRisks(r) {
+  const body = document.getElementById("risksBody");
+  const c = r.counts, n = r.findings.length;
+  const tab = document.getElementById("tabRiskCount");
+  tab.textContent = n || "";
+  tab.className = "count" + (c.high ? " hot" : "");
+
+  const head = n === 0
+    ? '<span class="sev-pill good">Nothing flagged</span><span class="pill">' + r.clauses_scanned + ' clauses scanned</span>'
+    : [c.high ? '<span class="sev-pill high">' + c.high + ' high</span>' : "",
+       c.medium ? '<span class="sev-pill medium">' + c.medium + ' medium</span>' : "",
+       c.low ? '<span class="sev-pill low">' + c.low + ' low</span>' : "",
+       '<span class="pill">' + r.clauses_scanned + ' clauses scanned</span>'].join("");
+
+  const items = n === 0
+    ? '<div class="disclaimer">No known unfavourable pattern matched. That is not a clean bill of ' +
+      'health — it means nothing in the rule set fired, and a contract can still contain terms ' +
+      'no rule anticipates.</div>'
+    : r.findings.map(f =>
+        '<div class="risk ' + f.severity + '">' +
+          '<div class="risk-top"><span class="risk-title">' + esc(f.label) + '</span>' +
+          '<span class="sev-tag ' + f.severity + '">' + f.severity + '</span></div>' +
+          '<div class="risk-why">' + esc(f.explanation) + '</div>' +
+          '<div class="risk-who">Tends to disadvantage: ' + esc(f.affects) + '</div>' +
+          '<div class="risk-quote">' + esc(f.excerpt) + '</div>' +
+        '</div>').join("") +
+      '<div class="disclaimer">These are pattern matches on the contract\'s own wording, not legal ' +
+      'advice. A flagged clause may be perfectly reasonable in context — read the quoted text and ' +
+      'judge it yourself.</div>';
+
+  body.innerHTML = '<div class="scanline">' + head + '</div>' + items;
 }
 
-function escapeHtml(s) {
-  const div = document.createElement("div");
-  div.textContent = s;
-  return div.innerHTML;
+/* ---------------- summary ---------------- */
+function renderSummaryPrompt() {
+  document.getElementById("summaryBody").innerHTML =
+    '<p style="color:var(--muted);max-width:520px;">A structured read of the whole contract — ' +
+    'parties, obligations, dates, notice period, penalties and how it ends. Generated by the ' +
+    'local model, so it takes about half a minute.</p>' +
+    '<button class="btn" id="sumBtn">Generate summary</button>';
+  document.getElementById("sumBtn").onclick = runSummary;
 }
 
-document.getElementById("summarizeBtn").addEventListener("click", async () => {
-  const statusEl = document.getElementById("summaryStatus");
-  const output = document.getElementById("summaryOutput");
-  statusEl.textContent = "Generating summary (this can take a while on a local model)...";
-  statusEl.className = "status";
-  output.innerHTML = "";
+async function runSummary() {
+  const id = currentId;
+  const body = document.getElementById("summaryBody");
+  body.innerHTML = '<div class="skel"><div style="width:30%"></div><div style="width:85%"></div>' +
+    '<div style="width:65%"></div><div style="width:75%"></div></div>' +
+    '<p style="color:var(--muted);margin-top:14px;font-size:12.5px;">Reading the full document locally…</p>';
   try {
-    const summary = await api(`/documents/${currentDocId}/summarize`, { method: "POST" });
-    statusEl.textContent = summary.parse_error
-      ? "The model's response could not be fully parsed; showing what was recovered."
-      : "";
-    statusEl.className = summary.parse_error ? "status error" : "status";
-    output.innerHTML =
-      renderSummarySection("Parties", summary.parties) +
-      renderSummarySection("Key Obligations", summary.key_obligations) +
-      renderSummarySection("Important Dates", summary.important_dates) +
-      `<div class="summary-section"><h3>Notice Period</h3><div>${summary.notice_period ? escapeHtml(summary.notice_period) : '<span class="empty">Not found in the document.</span>'}</div></div>` +
-      renderSummarySection("Penalty Clauses", summary.penalty_clauses) +
-      renderSummarySection("Termination Conditions", summary.termination_conditions);
-  } catch (err) {
-    // The API's 503 detail already names the specific problem (server down
-    // vs. model not pulled) and the command to fix it, so show it verbatim
-    // rather than a generic guess.
-    statusEl.textContent = err.status === 503 ? err.message : "Summarization failed: " + err.message;
-    statusEl.className = "status error";
+    const s = await api("/documents/" + id + "/summarize", { method: "POST" });
+    sumCache[id] = s;
+    if (currentId === id) renderSummary(s);
+  } catch (e) {
+    if (currentId !== id) return;
+    body.innerHTML = '<div class="disclaimer">' + esc(e.message) + '</div>';
+    const b = document.createElement("button");
+    b.className = "btn"; b.textContent = "Try again"; b.style.marginTop = "12px";
+    b.onclick = runSummary; body.appendChild(b);
   }
-});
+}
 
-function appendChatMessage(role, html) {
+function renderSummary(s) {
+  const card = (title, items) =>
+    '<div class="sum-card"><h3>' + title + '</h3>' +
+    (items && items.length
+      ? '<ul>' + items.map(i => '<li>' + esc(i) + '</li>').join("") + '</ul>'
+      : '<div class="none">Not stated in the document.</div>') + '</div>';
+
+  document.getElementById("summaryBody").innerHTML =
+    (s.parse_error ? '<div class="disclaimer">The model\'s reply could not be fully parsed — showing what was recovered.</div>' : "") +
+    '<div class="sum-grid">' +
+      card("Parties", s.parties) +
+      '<div class="sum-card"><h3>Notice period</h3>' +
+        (s.notice_period ? '<div class="single">' + esc(s.notice_period) + '</div>'
+                         : '<div class="none">Not stated in the document.</div>') + '</div>' +
+      card("Key obligations", s.key_obligations) +
+      card("Important dates", s.important_dates) +
+      card("Penalties", s.penalty_clauses) +
+      card("How it ends", s.termination_conditions) +
+    '</div>' +
+    '<div style="margin-top:14px"><button class="btn ghost" id="reSum">Regenerate</button></div>';
+  document.getElementById("reSum").onclick = runSummary;
+}
+
+/* ---------------- chat ---------------- */
+const SUGGESTIONS = {
+  rental: ["When is the rent due?", "Who pays for major repairs?", "What happens if I don't vacate on time?"],
+  employment: ["What is the probation period?", "What notice must I give?", "Is there a non-compete?"],
+  freelance: ["Who owns the intellectual property?", "How are disputes resolved?", "What law governs this?"],
+  "": ["What law governs this agreement?", "How is this agreement terminated?", "What are the payment terms?"],
+};
+
+function renderSuggestions(type) {
+  const box = document.getElementById("suggest");
+  box.style.display = "flex";
+  box.innerHTML = "";
+  (SUGGESTIONS[type || ""] || SUGGESTIONS[""]).forEach(q => {
+    const b = document.createElement("button");
+    b.className = "sugg"; b.textContent = q;
+    b.onclick = () => { document.getElementById("chatInput").value = q; ask(); };
+    box.appendChild(b);
+  });
+}
+
+function renderChat() {
   const log = document.getElementById("chatLog");
-  const div = document.createElement("div");
-  div.className = `msg ${role}`;
-  div.innerHTML = html;
-  log.appendChild(div);
+  log.innerHTML = (chatCache[currentId] || []).join("");
   log.scrollTop = log.scrollHeight;
 }
 
-async function sendChat() {
+function pushTurn(html) {
+  (chatCache[currentId] = chatCache[currentId] || []).push(html);
+  renderChat();
+}
+
+async function ask() {
   const input = document.getElementById("chatInput");
-  const statusEl = document.getElementById("chatStatus");
-  const question = input.value.trim();
-  if (!question) return;
-  appendChatMessage("user", `<div class="bubble">${escapeHtml(question)}</div>`);
+  const q = input.value.trim();
+  if (!q || !currentId) return;
+  const id = currentId;
   input.value = "";
-  statusEl.textContent = "Thinking...";
-  statusEl.className = "status";
+  document.getElementById("suggest").style.display = "none";
+  pushTurn('<div class="turn you"><div class="bubble">' + esc(q) + '</div></div>');
+
+  const log = document.getElementById("chatLog");
+  const wait = document.createElement("div");
+  wait.className = "turn bot";
+  wait.innerHTML = '<div class="bubble"><span class="thinking"><i></i><i></i><i></i></span></div>';
+  log.appendChild(wait);
+  log.scrollTop = log.scrollHeight;
 
   try {
-    const answer = await api(`/documents/${currentDocId}/chat`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ question }),
+    const a = await api("/documents/" + id + "/chat", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ question: q }),
     });
-    statusEl.textContent = "";
-    const bubbleClass = answer.grounded ? "bubble" : "bubble refused";
-    let sourcesHtml = "";
-    if (answer.cited_chunks && answer.cited_chunks.length) {
-      sourcesHtml = `<details class="sources"><summary>${answer.cited_chunks.length} source(s)</summary>` +
-        answer.cited_chunks.map(c => `<div class="source-item">${escapeHtml(c.metadata.heading || ("chunk " + c.metadata.chunk_index))}<br>${escapeHtml(c.text.slice(0, 200))}${c.text.length > 200 ? "…" : ""}</div>`).join("") +
-        `</details>`;
-    }
-    appendChatMessage("assistant", `<div class="${bubbleClass}">${escapeHtml(answer.answer)}</div>${sourcesHtml}`);
-  } catch (err) {
-    statusEl.textContent = err.status === 503 ? err.message : "Question failed: " + err.message;
-    statusEl.className = "status error";
+    wait.remove();
+    if (currentId !== id) return;
+    const cites = (a.cited_chunks || []).map(c =>
+      '<div class="cite-body"><div class="cite-head">' +
+      esc(c.metadata.heading || ("clause " + c.metadata.chunk_index)) + '</div>' +
+      '<div class="cite-text">' + esc(c.text.slice(0, 240)) + (c.text.length > 240 ? "…" : "") +
+      '</div></div>').join("");
+    pushTurn('<div class="turn bot">' +
+      '<div class="bubble ' + (a.grounded ? "" : "refused") + '">' + esc(a.answer) + '</div>' +
+      (cites ? '<details class="cite"><summary>❝ ' + a.cited_chunks.length + ' clause' +
+        (a.cited_chunks.length > 1 ? "s" : "") + ' cited</summary>' + cites + '</details>' : "") +
+      '</div>');
+  } catch (e) {
+    wait.remove();
+    if (currentId !== id) return;
+    pushTurn('<div class="turn bot"><div class="bubble refused">' + esc(e.message) + '</div></div>');
   }
 }
 
-document.getElementById("chatSendBtn").addEventListener("click", sendChat);
-document.getElementById("chatInput").addEventListener("keydown", (e) => {
-  if (e.key === "Enter") sendChat();
+/* ---------------- wiring ---------------- */
+document.addEventListener("DOMContentLoaded", async () => {
+  document.getElementById("loginBtn").onclick = doLogin;
+  document.getElementById("loginPass").addEventListener("keydown", e => { if (e.key === "Enter") doLogin(); });
+  document.getElementById("logoutBtn").onclick = async () => {
+    await fetch("/api/auth/logout", { method: "POST" });
+    location.reload();
+  };
+
+  if (!(await checkSession())) return;
+
+  const fileInput = document.getElementById("fileInput");
+  document.getElementById("pickBtn").onclick = () => fileInput.click();
+  document.getElementById("newDocBtn").onclick = () => { showStage(); fileInput.click(); };
+  fileInput.onchange = () => { upload(fileInput.files[0]); fileInput.value = ""; };
+
+  const dz = document.getElementById("dropzone");
+  ["dragenter", "dragover"].forEach(ev => dz.addEventListener(ev, e => {
+    e.preventDefault(); dz.classList.add("drag");
+  }));
+  ["dragleave", "drop"].forEach(ev => dz.addEventListener(ev, e => {
+    e.preventDefault(); dz.classList.remove("drag");
+  }));
+  dz.addEventListener("drop", e => upload(e.dataTransfer.files[0]));
+
+  document.querySelectorAll(".tab").forEach(t => t.onclick = () => showTab(t.dataset.pane));
+
+  document.getElementById("askBtn").onclick = ask;
+  document.getElementById("chatInput").addEventListener("keydown", e => { if (e.key === "Enter") ask(); });
+
+  document.getElementById("deleteBtn").onclick = async () => {
+    if (!currentId) return;
+    const d = docs.find(x => x.doc_id === currentId);
+    if (!confirm("Remove " + (d ? d.filename : "this document") + "? Its indexed clauses are deleted too.")) return;
+    try {
+      const gone = currentId;
+      await api("/documents/" + gone, { method: "DELETE" });
+      delete riskCache[gone]; delete sumCache[gone]; delete chatCache[gone];
+      currentId = null;
+      await loadDocs();
+      toast("Document removed.");
+    } catch (e) { toast(e.message, true); }
+  };
+
+  try {
+    const m = await api("/admin/model");
+    const chip = document.getElementById("modelChip");
+    chip.textContent = m.model;
+    chip.style.display = "inline-flex";
+  } catch { /* decorative only; Ollama or auth may be unavailable */ }
+
+  loadDocs();
 });
 </script>
 </body>
