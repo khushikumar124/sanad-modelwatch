@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 import uuid
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
@@ -25,6 +26,7 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from sanad.api.auth import COOKIE_NAME, authenticate, create_session, current_user, require_user
+from sanad.api import telemetry
 from sanad.api.schemas import (
     ChatRequest,
     ChatResponse,
@@ -279,11 +281,31 @@ def chat_with_document(
     doc_id: str, req: ChatRequest, _user: str | None = Depends(require_user)
 ):
     _get_record(doc_id)  # 404 if unknown, even though vector_store would just return no hits
+    started = time.perf_counter()
     try:
         result = ask(doc_id, req.question, vector_store, llm_client)
     except LLMConnectionError as e:
         raise HTTPException(status_code=503, detail=str(e))
+    # Operational facts only -- no question or answer text. See telemetry.py.
+    telemetry.record_chat(
+        grounded=result.grounded,
+        citations=len(result.cited_chunks),
+        latency_ms=(time.perf_counter() - started) * 1000,
+        parse_error=result.parse_error,
+        retrieved=len(result.retrieved_chunks),
+    )
     return result.to_dict()
+
+
+@app.get("/api/telemetry")
+def get_telemetry(drain: bool = False, _user: str | None = Depends(require_user)):
+    """Recent operational events, for an external monitor to collect.
+
+    Sanad does not push anywhere -- it publishes, and something else
+    decides to look. `drain=true` consumes the buffer so a polling
+    collector sees each question once.
+    """
+    return {"events": telemetry.snapshot(drain=drain)}
 
 
 @app.get("/api/admin/model", response_model=SetModelResponse)

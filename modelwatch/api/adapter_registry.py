@@ -5,12 +5,14 @@ adding one entry here -- the API and engine code never change.
 from __future__ import annotations
 
 from modelwatch.adapters.classifier_adapter import ClassifierAdapter
+from modelwatch.adapters.live_telemetry_adapter import LiveTelemetryAdapter
 from modelwatch.adapters.llm_adapter import LLMAdapter
 from modelwatch.core.adapter_base import ModelAdapter
 
 ADAPTER_REGISTRY: dict[str, type[ModelAdapter]] = {
     ClassifierAdapter.adapter_name: ClassifierAdapter,
     LLMAdapter.adapter_name: LLMAdapter,
+    LiveTelemetryAdapter.adapter_name: LiveTelemetryAdapter,
 }
 
 

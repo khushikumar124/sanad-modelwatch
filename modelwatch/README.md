@@ -1,7 +1,8 @@
 # ModelWatch
 
-A small, model-agnostic drift/quality monitoring framework. The monitoring
-engine never contains model-type-specific logic — it only talks to a
+A small drift/quality monitoring framework with a model-agnostic core
+(see the boundary below). The monitoring engine never contains
+model-type-specific logic — it only talks to a
 `ModelAdapter` interface (`build_baseline`, `check_drift`). New model types
 are added by writing a new adapter, not by editing the engine.
 
@@ -13,6 +14,48 @@ Two adapters ship with it:
 - **LLMAdapter** — LLM apps, monitored via a golden question/answer set.
   Drift/quality = TF-IDF cosine similarity between actual and expected
   answers on a new batch.
+
+## What is and isn't general
+
+"Model-agnostic" is true of the core and not of everything, so it is worth
+being precise about where the line falls.
+
+**Fully general — works with any model, and contains no model-type logic:**
+
+| Component | Why it stays general |
+|---|---|
+| `core/adapter_base.py` | The interface itself: `build_baseline` / `check_drift` |
+| `core/engine.py` | Register, check, alert, retrain, version. Imports only `logging`, `typing`, the adapter interface and storage — no scipy, no sklearn, no branching on model type |
+| `core/storage.py` | Persists baselines, signals and statistics as opaque JSON; never inspects their shape |
+| `api/app.py` | REST layer; routes by `adapter_name` through the registry |
+
+Adding a model type costs **one adapter file and one line** in
+`api/adapter_registry.py`. Nothing above changes.
+
+**Adapters are model-type-specific by definition** — that is what they are
+for — but they differ in how broadly they apply:
+
+- `ClassifierAdapter` — any tabular model with numeric features. Broadly
+  general across that whole class of model.
+- `LLMAdapter` — any LLM application that can answer a fixed golden set.
+  General across LLM apps, not tied to Sanad.
+- `LiveTelemetryAdapter` — **specific to a RAG chatbot.** "Refusal rate"
+  and "citation rate" are not general ML concepts; they only mean
+  something for an app that can decline to answer and cite sources.
+  Despite the generic name, this one does not transfer to an arbitrary
+  model. A genuinely general equivalent would watch predictions against
+  labels (accuracy, MAE) rather than these signals.
+
+**Not general — a known limitation:**
+
+- `dashboard/index.html` holds an `ADAPTERS` descriptor map keyed by
+  adapter name, supplying the detector label, metric wording and
+  explainer text. A fourth adapter therefore renders with generic
+  fallback text until an entry is added. The engine does not need editing
+  to support a new model type; **the dashboard does.** The principled fix
+  is a `describe()` on the adapter interface so an adapter supplies its
+  own presentation metadata, which would restore the property that the
+  UI never needs to know what adapters exist.
 
 Sanad's chatbot ([`../sanad`](../sanad)) is the first real integration:
 `examples/sanad_golden_set_runner.py` periodically runs a golden set

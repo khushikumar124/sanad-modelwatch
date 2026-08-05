@@ -276,12 +276,57 @@ async function get(path) {
   return r.json();
 }
 
-/* threshold for the metric the adapter actually alerts on */
+/* Per-adapter presentation. The engine is model-agnostic; this map is the
+   dashboard's equivalent -- a new adapter is described here rather than by
+   editing the render functions, which previously assumed exactly two. */
+const ADAPTERS = {
+  classifier: {
+    detector: "Kolmogorov–Smirnov per feature",
+    sample: s => (s.n_features ?? "—") + " features",
+    qualitySub: () => "accuracy vs labels (when supplied)",
+    driftSub: s => `${s.n_flagged ?? 0}/${s.n_features ?? 0} features flagged`,
+    signalNote: "KS statistic per feature",
+    threshold: s => s.drift_feature_fraction === undefined ? null
+      : { value: s.drift_feature_fraction, metric: "drift", dir: "above" },
+    healthy: () => "No feature distribution differs from baseline beyond the significance threshold.",
+    degraded: s => `${s.n_flagged ?? "?"} of ${s.n_features ?? "?"} features shifted from baseline.`,
+  },
+  llm: {
+    detector: "TF-IDF cosine vs golden set",
+    sample: s => (s.n_prompts ?? "—") + " prompts",
+    qualitySub: s => (s.ci95_low !== undefined && s.n_prompts > 1)
+      ? `95% CI ${f3(s.ci95_low)}–${f3(s.ci95_high)}` : "mean similarity",
+    driftSub: () => "1 − mean similarity",
+    signalNote: "similarity per golden prompt",
+    threshold: s => s.threshold === undefined || s.threshold === null ? null
+      : { value: s.threshold, metric: "quality", dir: "below" },
+    healthy: (s, r) => `Answer quality ${f3(r.quality_score)} is above the ${s.threshold} alert threshold.`,
+    degraded: (s, r) => `Answer quality ${f3(r.quality_score)} is below the ${s.threshold} alert threshold.`,
+  },
+  live_telemetry: {
+    detector: "live traffic vs normal operation",
+    sample: s => (s.n_events ?? "—") + " requests",
+    qualitySub: () => "grounded-answer rate",
+    driftSub: () => "share of signals outside tolerance",
+    signalNote: "operational signal vs baseline",
+    // Alerting is per-signal tolerance, not one number, so there is no
+    // single threshold to draw. Saying so beats rendering "null".
+    threshold: () => null,
+    healthy: s => `Refusal, citation and latency are all within tolerance over ${s.n_events ?? 0} request(s).`,
+    degraded: s => s.sufficient_sample === false
+      ? `Sample too small to judge (${s.n_events} of ${s.min_events} needed).`
+      : `Refusal rate ${(100 * (s.refusal_rate ?? 0)).toFixed(0)}%, citation rate ${(100 * (s.citation_rate ?? 0)).toFixed(0)}% over ${s.n_events} request(s).`,
+  },
+};
+const FALLBACK = {
+  detector: "—", sample: () => "—", qualitySub: () => "", driftSub: () => "",
+  signalNote: "", threshold: () => null,
+  healthy: () => "Within baseline.", degraded: () => "Outside baseline.",
+};
+const spec = () => (model && ADAPTERS[model.adapter_name]) || FALLBACK;
+
 function thresholdOf(run) {
-  const s = (run && run.statistics) || {};
-  if (s.threshold !== undefined) return { value: s.threshold, metric: "quality", dir: "below" };
-  if (s.drift_feature_fraction !== undefined) return { value: s.drift_feature_fraction, metric: "drift", dir: "above" };
-  return null;
+  return spec().threshold((run && run.statistics) || {});
 }
 
 /* ---------------- rendering ---------------- */
@@ -298,31 +343,29 @@ function renderStatus(latest) {
     detail.textContent = "Register a check to start collecting a baseline.";
     return;
   }
-  const t = thresholdOf(latest);
+  const st = latest.statistics || {};
+  const sp = spec();
   if (latest.is_drifted || open) {
     el.className = "status drifted"; icon.textContent = "▲";
     head.textContent = "Degraded — drift detected";
-    detail.textContent = t && t.metric === "quality"
-      ? `Answer quality ${f3(latest.quality_score)} is below the ${t.value} alert threshold. ${open} open alert${open === 1 ? "" : "s"}.`
-      : `${(latest.statistics || {}).n_flagged ?? "?"} of ${(latest.statistics || {}).n_features ?? "?"} features shifted from baseline. ${open} open alert${open === 1 ? "" : "s"}.`;
+    detail.textContent = sp.degraded(st, latest) +
+      ` ${open} open alert${open === 1 ? "" : "s"}.`;
   } else {
     el.className = "status ok"; icon.textContent = "●";
     head.textContent = "Healthy";
-    detail.textContent = t && t.metric === "quality"
-      ? `Answer quality ${f3(latest.quality_score)} is above the ${t.value} alert threshold, with no open alerts.`
-      : `No feature distribution differs from baseline beyond the significance threshold.`;
+    detail.textContent = sp.healthy(st, latest) + " No open alerts.";
   }
 }
 
 function renderIdentity(latest) {
   const s = (latest && latest.statistics) || {};
-  const isLLM = model && model.adapter_name === "llm";
+  const sp = spec();
   const cells = [
     ["Monitored model", model ? model.model_id : "—", true],
     ["Adapter", model ? model.adapter_name : "—", false],
     ["Baseline version", model ? "v" + model.current_version : "—", false],
-    ["Detector", isLLM ? "TF-IDF cosine vs golden set" : "Kolmogorov–Smirnov per feature", false],
-    ["Sample size", isLLM ? ((s.n_prompts ?? "—") + " prompts") : ((s.n_features ?? "—") + " features"), false],
+    ["Detector", sp.detector, false],
+    ["Sample size", sp.sample(s), false],
   ];
   document.getElementById("identity").innerHTML = cells.map(([k, v, teal]) =>
     `<div class="id-cell"><div class="k">${k}</div><div class="v${teal ? " tealed" : ""}">${esc(v)}</div></div>`).join("");
@@ -330,7 +373,7 @@ function renderIdentity(latest) {
 
 function renderTiles(latest) {
   const s = (latest && latest.statistics) || {};
-  const isLLM = model && model.adapter_name === "llm";
+  const sp = spec();
   const t = thresholdOf(latest);
   const q = latest ? latest.quality_score : null;
   const d = latest ? latest.drift_score : null;
@@ -339,12 +382,7 @@ function renderTiles(latest) {
   const bar = (val, good) =>
     `<div class="meter"><i style="width:${Math.max(2, Math.min(100, (val || 0) * 100))}%;background:${good ? "var(--ok)" : "var(--danger)"}"></i></div>`;
 
-  let qSub = "—";
-  if (isLLM && s.ci95_low !== undefined && s.n_prompts > 1) {
-    qSub = `95% CI ${f3(s.ci95_low)}–${f3(s.ci95_high)}`;
-  } else if (!isLLM) {
-    qSub = q === null ? "no labels supplied" : "accuracy vs labels";
-  }
+  const qSub = sp.qualitySub(s) || "—";
 
   document.getElementById("tiles").innerHTML = `
     <div class="tile">
@@ -356,13 +394,13 @@ function renderTiles(latest) {
     <div class="tile">
       <div class="k">Drift score</div>
       <div class="v ${latest && latest.is_drifted ? "bad" : "neutral"}">${f3(d)}</div>
-      <div class="s">${isLLM ? "1 − mean similarity" : `${s.n_flagged ?? 0}/${s.n_features ?? 0} features flagged`}</div>
+      <div class="s">${sp.driftSub(s)}</div>
       ${d === null ? "" : bar(d, !(latest && latest.is_drifted))}
     </div>
     <div class="tile">
       <div class="k">Alert threshold</div>
-      <div class="v neutral">${t ? t.value : "—"}</div>
-      <div class="s">${t ? `alerts when ${t.metric} goes ${t.dir}` : "—"}</div>
+      <div class="v neutral">${t ? t.value : "per-signal"}</div>
+      <div class="s">${t ? `alerts when ${t.metric} goes ${t.dir}` : "each signal has its own tolerance"}</div>
     </div>
     <div class="tile">
       <div class="k">Open alerts</div>
@@ -457,7 +495,7 @@ function renderSignals(run) {
   }
   const isLLM = model && model.adapter_name === "llm";
   const t = thresholdOf(run);
-  note.textContent = isLLM ? "similarity per golden prompt" : "KS statistic per feature";
+  note.textContent = spec().signalNote;
 
   const rows = run.signals.slice().sort((a, b) => isLLM ? a.value - b.value : b.value - a.value);
   box.innerHTML = rows.map(s => {
@@ -490,9 +528,26 @@ function renderAlerts() {
     </div>`).join("");
 }
 
+const EXPLAIN = {
+  live_telemetry: `
+    <p><b>What is being watched.</b> Sanad's real traffic. Every question a user actually asks
+    records whether the answer was grounded, how many clauses it cited, and how long it took.</p>
+    <p><b>Why these signals.</b> Scoring correctness needs to know the correct answer, which real
+    questions do not come with. These three need no ground truth, so they can be computed for
+    every request. <b>Refusal rate</b> is the most useful: over-refusal is this chatbot's known
+    failure mode, so a rise in it is the earliest available warning.</p>
+    <p><b>How alerting works.</b> Each signal has its own tolerance against the baseline rather
+    than one shared threshold. Batches below <code>min_events</code> are reported but never
+    flagged — two unlucky refusals out of three is not a regression.</p>
+    <p><b>What it cannot do.</b> It says the system is behaving as it did at baseline. It does
+    <i>not</i> say the answers are correct — a confidently wrong answer looks perfectly healthy
+    here. That is what the golden set is for.</p>`,
+};
+
 function renderExplain() {
   const isLLM = model && model.adapter_name === "llm";
   const el = document.getElementById("explain");
+  if (model && EXPLAIN[model.adapter_name]) { el.innerHTML = EXPLAIN[model.adapter_name]; return; }
   el.innerHTML = isLLM ? `
     <p><b>What is being watched.</b> Sanad's chatbot. A fixed <b>golden set</b> of questions with
     known-correct answers is replayed through the live app, and each returned answer is compared

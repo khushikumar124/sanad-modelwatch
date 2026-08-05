@@ -57,6 +57,15 @@ class Config:
     # expected answers before a batch is considered drifted.
     llm_similarity_threshold: float = _float_env("MODELWATCH_LLM_SIMILARITY_THRESHOLD", 0.35)
 
+    # LiveTelemetryAdapter: how far an operational metric may move from its
+    # baseline before it counts as drift. Absolute for rates, a ratio for
+    # latency. min_events guards against rates computed from a handful of
+    # requests, where one unlucky refusal would look like a 33% regression.
+    telemetry_refusal_tolerance: float = _float_env("MODELWATCH_TELEMETRY_REFUSAL_TOLERANCE", 0.20)
+    telemetry_citation_tolerance: float = _float_env("MODELWATCH_TELEMETRY_CITATION_TOLERANCE", 0.25)
+    telemetry_latency_multiplier: float = _float_env("MODELWATCH_TELEMETRY_LATENCY_MULTIPLIER", 2.5)
+    telemetry_min_events: int = _int_env("MODELWATCH_TELEMETRY_MIN_EVENTS", 5)
+
     # Default logging level for library/service code.
     log_level: str = os.environ.get("MODELWATCH_LOG_LEVEL", "INFO")
 
