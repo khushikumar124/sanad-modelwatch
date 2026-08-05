@@ -15,6 +15,7 @@ MW_PORT=${MODELWATCH_API_PORT:-8000}
 stop_all() {
   lsof -ti:"$SANAD_PORT" 2>/dev/null | xargs kill -9 2>/dev/null
   lsof -ti:"$MW_PORT" 2>/dev/null | xargs kill -9 2>/dev/null
+  pkill -f "modelwatch.examples.telemetry_reporter" 2>/dev/null
 }
 
 if [ "${1:-}" = "--stop" ]; then
@@ -52,6 +53,12 @@ for _ in $(seq 1 60); do
   sleep 1
 done
 
+# Forward live usage to ModelWatch. Without this nothing polls Sanad's
+# telemetry buffer, so asking questions in the app leaves the dashboard
+# unchanged -- which reads as the monitor being broken.
+nohup python -u -m modelwatch.examples.telemetry_reporter --interval 20 \
+  > /tmp/telemetry_reporter.log 2>&1 &
+
 MODEL=$(curl -s --max-time 5 "http://localhost:$SANAD_PORT/api/admin/model" 2>/dev/null | sed 's/.*"model":"\([^"]*\)".*/\1/')
 AUTH=$(curl -s --max-time 5 "http://localhost:$SANAD_PORT/api/auth/session" 2>/dev/null | grep -c '"auth_enabled":true')
 HAVE=$(ollama list 2>/dev/null | awk 'NR>1{print $1}' | tr '\n' ' ')
@@ -72,5 +79,7 @@ case " $HAVE " in
   *) echo "  WARNING: '$MODEL' is not installed -- run: ollama pull $MODEL" ;;
 esac
 echo
-echo "  logs: /tmp/sanad_api.log  /tmp/modelwatch_api.log"
+echo "  telemetry:    reporting live usage every 20s -> sanad-live"
+echo
+echo "  logs: /tmp/sanad_api.log  /tmp/modelwatch_api.log  /tmp/telemetry_reporter.log"
 echo "  stop: ./run.sh --stop"
