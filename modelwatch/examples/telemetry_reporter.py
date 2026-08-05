@@ -73,6 +73,14 @@ def main() -> None:
         "--interval", type=float, default=20.0, help="seconds between polls (default 20)"
     )
     parser.add_argument("--once", action="store_true", help="poll a single time and exit")
+    parser.add_argument(
+        "--min-batch",
+        type=int,
+        default=5,
+        help="wait until this many events are buffered before reporting (default 5). Draining "
+        "on every poll produced batches of one or two, which the adapter correctly refuses to "
+        "judge, so drift could never fire.",
+    )
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
@@ -93,7 +101,14 @@ def main() -> None:
     print(f"Polling {args.sanad_url} every {args.interval:g}s. Ctrl-C to stop.")
     while True:
         try:
-            events = fetch_events(session, args.sanad_url)
+            # Look without consuming: a batch of one or two events cannot
+            # support a rate, so hold them until there are enough to judge.
+            waiting = fetch_events(session, args.sanad_url, drain=False)
+            if len(waiting) < args.min_batch and not args.once:
+                print(f"· {len(waiting)}/{args.min_batch} questions buffered, waiting")
+                time.sleep(args.interval)
+                continue
+            events = fetch_events(session, args.sanad_url, drain=True)
             if not events:
                 print("· no new questions")
             elif not is_registered(session, args.modelwatch_url):

@@ -56,7 +56,7 @@ done
 # Forward live usage to ModelWatch. Without this nothing polls Sanad's
 # telemetry buffer, so asking questions in the app leaves the dashboard
 # unchanged -- which reads as the monitor being broken.
-nohup python -u -m modelwatch.examples.telemetry_reporter --interval 20 \
+nohup python -u -m modelwatch.examples.telemetry_reporter --interval 15 --min-batch 5 \
   > /tmp/telemetry_reporter.log 2>&1 &
 
 MODEL=$(curl -s --max-time 5 "http://localhost:$SANAD_PORT/api/admin/model" 2>/dev/null | sed 's/.*"model":"\([^"]*\)".*/\1/')
