@@ -6,446 +6,597 @@
 <title>ModelWatch</title>
 <script src="chart.min.js"></script>
 <style>
+  /* ------------------------------------------------------------------
+     An operations console. Numbers are the interface, so they get a mono
+     face and real hierarchy; everything else recedes. Colour is reserved
+     for state (healthy / degraded / flagged) and never used decoratively,
+     so a red pixel always means the same thing.
+     ------------------------------------------------------------------ */
   :root {
-    --bg: #0b0e14;
-    --panel: #12151d;
-    --panel-border: #232838;
-    --text: #d7dbe5;
-    --text-dim: #7a8194;
-    --accent: #4fd1c5;
-    --accent-dim: #2a7f76;
-    --danger: #f2545b;
-    --danger-dim: #4a2226;
-    --warn: #e9b949;
-    --ok: #4fd17a;
-    --mono: "SF Mono", "Fira Code", Consolas, monospace;
+    --bg:        #0c1016;
+    --panel:     #141a22;
+    --panel-2:   #1a212b;
+    --line:      #242c38;
+    --line-soft: #1d242e;
+    --text:      #d8dee8;
+    --text-2:    #98a2b3;
+    --text-3:    #6b7585;
+
+    --teal:      #45c8b8;
+    --danger:    #e5484d;
+    --danger-bg: rgba(229,72,77,.13);
+    --warn:      #f0b429;
+    --warn-bg:   rgba(240,180,41,.12);
+    --ok:        #46b17b;
+    --ok-bg:     rgba(70,177,123,.12);
+    --violet:    #8b7ef0;
+
+    --mono: "SF Mono", ui-monospace, "JetBrains Mono", Menlo, Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, sans-serif;
+    --r: 8px;
   }
   * { box-sizing: border-box; }
   body {
-    margin: 0;
-    background: var(--bg);
-    color: var(--text);
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    font-size: 13px;
+    margin: 0; background: var(--bg); color: var(--text);
+    font-family: var(--sans); font-size: 13px; line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
   }
-  header {
-    display: flex;
-    align-items: center;
-    gap: 16px;
-    padding: 12px 20px;
-    border-bottom: 1px solid var(--panel-border);
-    background: linear-gradient(180deg, #12151d, #0e1017);
-  }
-  header h1 {
-    font-size: 15px;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    margin: 0;
-    color: var(--accent);
-    font-family: var(--mono);
-  }
-  header .dot {
-    width: 8px; height: 8px; border-radius: 50%;
-    background: var(--ok);
-    box-shadow: 0 0 8px var(--ok);
-    animation: pulse 2s infinite;
-  }
-  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.35; } }
-  select {
-    background: var(--panel);
-    color: var(--text);
-    border: 1px solid var(--panel-border);
-    border-radius: 4px;
-    padding: 6px 10px;
-    font-family: var(--mono);
-    font-size: 12px;
-  }
-  main {
-    max-width: 1200px;
-    margin: 0 auto;
-    padding: 20px;
-    display: flex;
-    flex-direction: column;
-    gap: 16px;
-  }
-  .tiles {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-    gap: 12px;
-  }
-  .tile {
-    background: var(--panel);
-    border: 1px solid var(--panel-border);
-    border-radius: 6px;
-    padding: 12px 14px;
-  }
-  .tile .label {
-    color: var(--text-dim);
-    font-size: 10px;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-  }
-  .tile .value {
-    font-family: var(--mono);
-    font-size: 24px;
-    margin-top: 4px;
-  }
-  .tile .value.ok { color: var(--ok); }
-  .tile .value.danger { color: var(--danger); }
-  .tile .sub {
-    font-family: var(--mono); font-size: 10.5px; color: var(--text-dim); margin-top: 3px;
-  }
-  .panel {
-    background: var(--panel);
-    border: 1px solid var(--panel-border);
-    border-radius: 6px;
-    padding: 14px 16px;
-  }
-  .panel h2 {
-    font-size: 11px;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    color: var(--text-dim);
-    margin: 0 0 12px 0;
-    font-family: var(--mono);
-  }
-  canvas { max-height: 260px; }
-  table {
-    width: 100%;
-    border-collapse: collapse;
-    font-family: var(--mono);
-    font-size: 12px;
-  }
-  th, td {
-    text-align: left;
-    padding: 6px 8px;
-    border-bottom: 1px solid var(--panel-border);
-  }
-  th {
-    color: var(--text-dim);
-    font-weight: 500;
-    text-transform: uppercase;
-    font-size: 10px;
-    letter-spacing: 0.05em;
-  }
-  tbody tr { cursor: pointer; }
-  tbody tr:hover { background: #171b26; }
-  .badge {
-    display: inline-block;
-    padding: 2px 8px;
-    border-radius: 3px;
-    font-size: 10px;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-  }
-  .badge.drifted { background: var(--danger-dim); color: var(--danger); }
-  .badge.clean { background: #113328; color: var(--ok); }
-  .alert-row {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 8px 0;
-    border-bottom: 1px solid var(--panel-border);
-    gap: 12px;
-  }
-  .alert-row:last-child { border-bottom: none; }
-  .alert-msg { font-family: var(--mono); font-size: 12px; color: var(--danger); }
-  .alert-time { color: var(--text-dim); font-size: 11px; white-space: nowrap; }
-  .empty { color: var(--text-dim); font-style: italic; padding: 8px 0; }
-  .grid-2 {
-    display: grid;
-    grid-template-columns: 2fr 1fr;
-    gap: 16px;
-  }
-  @media (max-width: 900px) { .grid-2 { grid-template-columns: 1fr; } }
+  button, select, input { font: inherit; color: inherit; }
 
-  /* per-signal breakdown drawer */
-  #signalDrawer {
-    position: fixed;
-    top: 0; right: 0;
-    width: 380px;
-    height: 100%;
+  /* ---------- top bar ---------- */
+  header {
+    display: flex; align-items: center; gap: 14px;
+    padding: 0 22px; height: 54px;
+    border-bottom: 1px solid var(--line); background: var(--panel);
+  }
+  .logo {
+    font-family: var(--mono); font-size: 13.5px; letter-spacing: .13em;
+    text-transform: uppercase; color: var(--teal); font-weight: 600;
+  }
+  .live { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--text-3); }
+  .live i {
+    width: 6px; height: 6px; border-radius: 50%; background: var(--ok);
+    box-shadow: 0 0 7px var(--ok); animation: pulse 2.4s infinite;
+  }
+  @keyframes pulse { 0%,100% { opacity: 1 } 50% { opacity: .3 } }
+  header .spacer { flex: 1 }
+  select {
+    background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px;
+    padding: 7px 11px; font-family: var(--mono); font-size: 12px; outline: none;
+  }
+  select:focus { border-color: var(--teal); }
+
+  main { max-width: 1280px; margin: 0 auto; padding: 18px 22px 50px; }
+
+  /* ---------- status banner ---------- */
+  .status {
+    display: flex; align-items: flex-start; gap: 13px;
+    border: 1px solid var(--line); border-radius: var(--r);
+    padding: 14px 17px; margin-bottom: 16px; background: var(--panel);
+  }
+  .status.ok      { border-left: 3px solid var(--ok); }
+  .status.drifted { border-left: 3px solid var(--danger); background: linear-gradient(90deg, var(--danger-bg), var(--panel) 45%); }
+  .status .icon { font-size: 17px; line-height: 1.3; }
+  .status .headline { font-size: 14.5px; font-weight: 600; }
+  .status.ok .headline { color: var(--ok); }
+  .status.drifted .headline { color: var(--danger); }
+  .status .detail { color: var(--text-2); margin-top: 3px; font-size: 12.5px; }
+
+  /* ---------- identity strip ---------- */
+  .identity {
+    display: flex; flex-wrap: wrap; gap: 0; margin-bottom: 16px;
+    border: 1px solid var(--line); border-radius: var(--r); overflow: hidden;
     background: var(--panel);
-    border-left: 1px solid var(--panel-border);
-    padding: 16px;
-    overflow-y: auto;
-    transform: translateX(100%);
-    transition: transform 0.15s ease-out;
-    z-index: 10;
   }
-  #signalDrawer.open { transform: translateX(0); }
-  #signalDrawer .close-btn {
-    float: right;
-    cursor: pointer;
-    color: var(--text-dim);
-    font-family: var(--mono);
+  .id-cell { padding: 11px 17px; border-right: 1px solid var(--line-soft); flex: 1; min-width: 150px; }
+  .id-cell:last-child { border-right: none; }
+  .id-cell .k {
+    font-size: 9.5px; text-transform: uppercase; letter-spacing: .1em; color: var(--text-3);
   }
-  .signal-item {
-    border: 1px solid var(--panel-border);
-    border-radius: 4px;
-    padding: 8px 10px;
-    margin-bottom: 8px;
-    font-family: var(--mono);
-    font-size: 11px;
+  .id-cell .v { font-family: var(--mono); font-size: 13px; margin-top: 3px; color: var(--text); }
+  .id-cell .v.tealed { color: var(--teal); }
+
+  /* ---------- metric tiles ---------- */
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px,1fr)); gap: 12px; margin-bottom: 16px; }
+  .tile {
+    background: var(--panel); border: 1px solid var(--line); border-radius: var(--r);
+    padding: 13px 16px 14px; position: relative; overflow: hidden;
   }
-  .signal-item .name { color: var(--accent); word-break: break-word; }
-  .signal-item .val { margin-top: 4px; }
-  .signal-item pre {
-    white-space: pre-wrap;
-    word-break: break-word;
-    margin: 4px 0 0 0;
-    color: var(--text-dim);
-    font-size: 10px;
+  .tile .k {
+    font-size: 9.5px; text-transform: uppercase; letter-spacing: .1em; color: var(--text-3);
+    display: flex; align-items: center; gap: 6px;
+  }
+  .tile .v { font-family: var(--mono); font-size: 27px; margin-top: 5px; letter-spacing: -.01em; }
+  .tile .v.ok { color: var(--ok); } .tile .v.bad { color: var(--danger); } .tile .v.neutral { color: var(--text); }
+  .tile .s { font-family: var(--mono); font-size: 10.5px; color: var(--text-3); margin-top: 4px; }
+  .meter { height: 3px; background: var(--line-soft); border-radius: 2px; margin-top: 9px; overflow: hidden; }
+  .meter i { display: block; height: 100%; border-radius: 2px; transition: width .3s ease; }
+
+  /* ---------- panels ---------- */
+  .panel {
+    background: var(--panel); border: 1px solid var(--line); border-radius: var(--r);
+    padding: 15px 17px; margin-bottom: 16px;
+  }
+  .panel > h2 {
+    font-size: 10.5px; text-transform: uppercase; letter-spacing: .1em; color: var(--text-3);
+    margin: 0 0 13px; font-weight: 600; display: flex; align-items: center; gap: 9px;
+  }
+  .panel > h2 .note { text-transform: none; letter-spacing: 0; color: var(--text-3); font-weight: 400; font-size: 11px; }
+  .cols { display: grid; grid-template-columns: 1.35fr 1fr; gap: 16px; align-items: start; }
+  @media (max-width: 980px) { .cols { grid-template-columns: 1fr; } }
+
+  /* ---------- table ---------- */
+  table { width: 100%; border-collapse: collapse; font-family: var(--mono); font-size: 12px; }
+  th {
+    text-align: left; padding: 7px 9px; color: var(--text-3); font-weight: 500;
+    font-size: 9.5px; text-transform: uppercase; letter-spacing: .08em;
+    border-bottom: 1px solid var(--line);
+  }
+  td { padding: 8px 9px; border-bottom: 1px solid var(--line-soft); }
+  tbody tr { cursor: pointer; transition: background .1s ease; }
+  tbody tr:hover { background: var(--panel-2); }
+  tbody tr.sel { background: var(--panel-2); box-shadow: inset 2px 0 0 var(--teal); }
+  .tag {
+    display: inline-block; padding: 2px 8px; border-radius: 3px;
+    font-size: 9.5px; text-transform: uppercase; letter-spacing: .05em; font-weight: 600;
+  }
+  .tag.drift { background: var(--danger-bg); color: var(--danger); }
+  .tag.clean { background: var(--ok-bg); color: var(--ok); }
+  .delta.up { color: var(--ok); } .delta.down { color: var(--danger); }
+
+  /* ---------- signal bars ---------- */
+  .sig { margin-bottom: 11px; }
+  .sig-top { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; }
+  .sig-name { font-size: 12px; color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .sig-val { font-family: var(--mono); font-size: 11.5px; flex: none; }
+  .sig-val.bad { color: var(--danger); } .sig-val.ok { color: var(--text-2); }
+  .bar { height: 5px; background: var(--line-soft); border-radius: 3px; margin-top: 5px; position: relative; overflow: hidden; }
+  .bar i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 3px; }
+  .bar .thr {
+    position: absolute; top: -2px; bottom: -2px; width: 1px; background: var(--warn); opacity: .85;
+  }
+
+  .empty { color: var(--text-3); font-style: italic; padding: 10px 0; font-size: 12.5px; }
+
+  /* ---------- explainer ---------- */
+  .explain { background: var(--panel-2); border: 1px solid var(--line-soft); border-radius: 6px; padding: 13px 15px; }
+  .explain p { margin: 0 0 8px; color: var(--text-2); font-size: 12.5px; line-height: 1.6; }
+  .explain p:last-child { margin-bottom: 0; }
+  .explain code {
+    font-family: var(--mono); font-size: 11.5px; background: var(--bg);
+    padding: 1px 5px; border-radius: 3px; color: var(--teal);
+  }
+  .explain b { color: var(--text); font-weight: 600; }
+
+  /* ---------- drawer ---------- */
+  #drawer {
+    position: fixed; top: 0; right: 0; width: 420px; max-width: 92vw; height: 100%;
+    background: var(--panel); border-left: 1px solid var(--line); padding: 18px 20px;
+    overflow-y: auto; transform: translateX(101%); transition: transform .18s ease-out; z-index: 20;
+  }
+  #drawer.open { transform: none; box-shadow: -20px 0 50px rgba(0,0,0,.4); }
+  #drawer h3 { font-size: 13px; margin: 0 0 3px; }
+  #drawer .sub { color: var(--text-3); font-size: 11.5px; font-family: var(--mono); margin-bottom: 15px; }
+  .xbtn {
+    float: right; cursor: pointer; color: var(--text-3); background: none; border: none;
+    font-family: var(--mono); font-size: 11.5px;
+  }
+  .xbtn:hover { color: var(--text); }
+  .kv {
+    display: grid; grid-template-columns: auto 1fr; gap: 4px 14px;
+    font-family: var(--mono); font-size: 11.5px; margin-bottom: 15px;
+  }
+  .kv .k { color: var(--text-3); }
+  .item {
+    border: 1px solid var(--line); border-radius: 6px; padding: 9px 11px; margin-bottom: 8px;
+    font-size: 11.5px;
+  }
+  .item.flagged { border-color: rgba(229,72,77,.4); background: var(--danger-bg); }
+  .item .n { font-family: var(--mono); color: var(--teal); word-break: break-word; }
+  .item pre {
+    white-space: pre-wrap; word-break: break-word; margin: 6px 0 0;
+    color: var(--text-3); font-size: 10.5px; font-family: var(--mono);
   }
 </style>
 </head>
 <body>
+
 <header>
-  <div class="dot"></div>
-  <h1>ModelWatch</h1>
-  <select id="modelSelect"><option>Loading models...</option></select>
+  <span class="logo">ModelWatch</span>
+  <span class="live"><i></i>live · 8s</span>
+  <div class="spacer"></div>
+  <select id="modelSelect"><option>loading…</option></select>
 </header>
 
 <main>
-  <div class="tiles">
-    <div class="tile"><div class="label">Drift Score</div><div class="value" id="tileDrift">&mdash;</div><div class="sub" id="tileDriftSub"></div></div>
-    <div class="tile"><div class="label">Quality Score</div><div class="value" id="tileQuality">&mdash;</div><div class="sub" id="tileQualitySub"></div></div>
-    <div class="tile"><div class="label">Active Alerts</div><div class="value" id="tileAlerts">&mdash;</div></div>
-    <div class="tile"><div class="label">Version</div><div class="value" id="tileVersion">&mdash;</div></div>
+  <div class="status ok" id="status">
+    <div class="icon" id="statusIcon">●</div>
+    <div>
+      <div class="headline" id="statusHead">—</div>
+      <div class="detail" id="statusDetail"></div>
+    </div>
+  </div>
+
+  <div class="identity" id="identity"></div>
+
+  <div class="tiles" id="tiles"></div>
+
+  <div class="panel">
+    <h2>Quality &amp; drift over time <span class="note" id="chartNote"></span></h2>
+    <canvas id="chart" height="86"></canvas>
+  </div>
+
+  <div class="cols">
+    <div class="panel">
+      <h2>Run history <span class="note">click a row to inspect</span></h2>
+      <table>
+        <thead><tr><th>Time</th><th>Ver</th><th>Quality</th><th>Δ</th><th>Drift</th><th>Status</th></tr></thead>
+        <tbody id="historyBody"><tr><td colspan="6" class="empty">No runs recorded yet.</td></tr></tbody>
+      </table>
+    </div>
+
+    <div>
+      <div class="panel">
+        <h2>Signal breakdown <span class="note" id="sigNote"></span></h2>
+        <div id="signals"><div class="empty">No run selected.</div></div>
+      </div>
+      <div class="panel">
+        <h2>Active alerts</h2>
+        <div id="alerts"><div class="empty">None.</div></div>
+      </div>
+    </div>
   </div>
 
   <div class="panel">
-    <h2>Drift / Quality Trend</h2>
-    <canvas id="trendChart"></canvas>
-  </div>
-
-  <div class="grid-2">
-    <div class="panel">
-      <h2>Run History <span style="color:var(--text-dim); font-weight:normal;">(click a row for signal breakdown)</span></h2>
-      <table>
-        <thead><tr><th>Time</th><th>Ver</th><th>Drift</th><th>Quality</th><th>Status</th></tr></thead>
-        <tbody id="historyBody"><tr><td colspan="5" class="empty">No runs yet</td></tr></tbody>
-      </table>
-    </div>
-    <div class="panel">
-      <h2>Active Alerts</h2>
-      <div id="alertsList"><div class="empty">No active alerts</div></div>
-    </div>
+    <h2>How this is measured</h2>
+    <div class="explain" id="explain"></div>
   </div>
 </main>
 
-<div id="signalDrawer">
-  <span class="close-btn" onclick="closeDrawer()">&times; close</span>
-  <h2 style="margin-top:28px;">Signal Breakdown</h2>
-  <div id="signalList"></div>
+<div id="drawer">
+  <button class="xbtn" onclick="closeDrawer()">esc · close</button>
+  <h3 id="drawerTitle">Run detail</h3>
+  <div class="sub" id="drawerSub"></div>
+  <div class="kv" id="drawerStats"></div>
+  <div id="drawerSignals"></div>
 </div>
 
 <script>
-const API_BASE = "";
-const POLL_INTERVAL_MS = 8000;
-let currentModelId = null;
-let currentHistory = [];
-let trendChart = null;
+const POLL_MS = 8000;
+let modelId = null, model = null, history = [], alerts = [], selectedRun = null, chart = null;
 
-async function fetchJson(path) {
-  const res = await fetch(API_BASE + path);
-  if (!res.ok) throw new Error(`${path} -> ${res.status}`);
-  return res.json();
+const f3 = v => (v === null || v === undefined) ? "—" : Number(v).toFixed(3);
+const esc = s => { const d = document.createElement("div"); d.textContent = s ?? ""; return d.innerHTML; };
+const time = iso => new Date(iso).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+const day  = iso => new Date(iso).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+
+async function get(path) {
+  const r = await fetch(path);
+  if (!r.ok) throw new Error(path + " → " + r.status);
+  return r.json();
 }
 
-function fmtScore(v) {
-  return v === null || v === undefined ? "—" : v.toFixed(3);
+/* threshold for the metric the adapter actually alerts on */
+function thresholdOf(run) {
+  const s = (run && run.statistics) || {};
+  if (s.threshold !== undefined) return { value: s.threshold, metric: "quality", dir: "below" };
+  if (s.drift_feature_fraction !== undefined) return { value: s.drift_feature_fraction, metric: "drift", dir: "above" };
+  return null;
 }
 
-function fmtTime(iso) {
-  const d = new Date(iso);
-  return d.toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit" });
-}
+/* ---------------- rendering ---------------- */
+function renderStatus(latest) {
+  const el = document.getElementById("status");
+  const head = document.getElementById("statusHead");
+  const detail = document.getElementById("statusDetail");
+  const icon = document.getElementById("statusIcon");
+  const open = alerts.length;
 
-async function loadModels() {
-  const models = await fetchJson("/models");
-  const select = document.getElementById("modelSelect");
-  const previous = currentModelId;
-  select.innerHTML = "";
-  if (models.length === 0) {
-    select.innerHTML = "<option>No models registered</option>";
+  if (!latest) {
+    el.className = "status"; icon.textContent = "○";
+    head.textContent = "No runs yet"; head.style.color = "var(--text-2)";
+    detail.textContent = "Register a check to start collecting a baseline.";
     return;
   }
-  for (const m of models) {
-    const opt = document.createElement("option");
-    opt.value = m.model_id;
-    opt.textContent = `${m.name} (${m.model_id})`;
-    select.appendChild(opt);
+  const t = thresholdOf(latest);
+  if (latest.is_drifted || open) {
+    el.className = "status drifted"; icon.textContent = "▲";
+    head.textContent = "Degraded — drift detected";
+    detail.textContent = t && t.metric === "quality"
+      ? `Answer quality ${f3(latest.quality_score)} is below the ${t.value} alert threshold. ${open} open alert${open === 1 ? "" : "s"}.`
+      : `${(latest.statistics || {}).n_flagged ?? "?"} of ${(latest.statistics || {}).n_features ?? "?"} features shifted from baseline. ${open} open alert${open === 1 ? "" : "s"}.`;
+  } else {
+    el.className = "status ok"; icon.textContent = "●";
+    head.textContent = "Healthy";
+    detail.textContent = t && t.metric === "quality"
+      ? `Answer quality ${f3(latest.quality_score)} is above the ${t.value} alert threshold, with no open alerts.`
+      : `No feature distribution differs from baseline beyond the significance threshold.`;
   }
-  currentModelId = previous && models.some(m => m.model_id === previous) ? previous : models[0].model_id;
-  select.value = currentModelId;
 }
 
-function renderTiles(model, history, activeAlerts) {
-  const latest = history[0];
-  document.getElementById("tileDrift").textContent = latest ? fmtScore(latest.drift_score) : "—";
-  document.getElementById("tileDrift").className = "value" + (latest && latest.is_drifted ? " danger" : " ok");
-  document.getElementById("tileQuality").textContent = latest ? fmtScore(latest.quality_score) : "—";
-  document.getElementById("tileAlerts").textContent = activeAlerts.length;
-  document.getElementById("tileAlerts").className = "value" + (activeAlerts.length > 0 ? " danger" : " ok");
-  document.getElementById("tileVersion").textContent = model ? "v" + model.current_version : "—";
-
-  // Show the spread behind the headline number. A quality score with no
-  // sense of its own variability invites reading noise as a trend.
-  const st = (latest && latest.statistics) || {};
-  const qsub = document.getElementById("tileQualitySub");
-  const dsub = document.getElementById("tileDriftSub");
-  if (st.ci95_low !== undefined && st.n_prompts > 1) {
-    qsub.textContent = `95% CI ${st.ci95_low.toFixed(3)}–${st.ci95_high.toFixed(3)} · n=${st.n_prompts}`;
-  } else if (st.n_features !== undefined) {
-    qsub.textContent = `${st.n_flagged}/${st.n_features} features flagged`;
-  } else { qsub.textContent = ""; }
-
-  if (st.threshold !== undefined) {
-    dsub.textContent = `alerts below quality ${st.threshold}`;
-  } else if (st.effective_threshold !== undefined) {
-    dsub.textContent = `p < ${Number(st.effective_threshold).toPrecision(2)} per feature` +
-      (st.bonferroni_correction ? " (Bonferroni)" : "");
-  } else { dsub.textContent = ""; }
+function renderIdentity(latest) {
+  const s = (latest && latest.statistics) || {};
+  const isLLM = model && model.adapter_name === "llm";
+  const cells = [
+    ["Monitored model", model ? model.model_id : "—", true],
+    ["Adapter", model ? model.adapter_name : "—", false],
+    ["Baseline version", model ? "v" + model.current_version : "—", false],
+    ["Detector", isLLM ? "TF-IDF cosine vs golden set" : "Kolmogorov–Smirnov per feature", false],
+    ["Sample size", isLLM ? ((s.n_prompts ?? "—") + " prompts") : ((s.n_features ?? "—") + " features"), false],
+  ];
+  document.getElementById("identity").innerHTML = cells.map(([k, v, teal]) =>
+    `<div class="id-cell"><div class="k">${k}</div><div class="v${teal ? " tealed" : ""}">${esc(v)}</div></div>`).join("");
 }
 
-function renderChart(history) {
-  const chronological = [...history].reverse();
-  const labels = chronological.map(r => fmtTime(r.timestamp));
-  const driftData = chronological.map(r => r.drift_score);
-  const qualityData = chronological.map(r => r.quality_score);
-  // Drawing the threshold turns "is 0.54 good?" into something the chart
-  // answers on its own, instead of something you look up in the README.
-  const thresholdData = chronological.map(r =>
-    (r.statistics && r.statistics.threshold !== undefined) ? r.statistics.threshold : null);
+function renderTiles(latest) {
+  const s = (latest && latest.statistics) || {};
+  const isLLM = model && model.adapter_name === "llm";
+  const t = thresholdOf(latest);
+  const q = latest ? latest.quality_score : null;
+  const d = latest ? latest.drift_score : null;
 
-  if (!trendChart) {
-    const ctx = document.getElementById("trendChart").getContext("2d");
-    trendChart = new Chart(ctx, {
+  const qGood = q === null || !t || t.metric !== "quality" ? true : q >= t.value;
+  const bar = (val, good) =>
+    `<div class="meter"><i style="width:${Math.max(2, Math.min(100, (val || 0) * 100))}%;background:${good ? "var(--ok)" : "var(--danger)"}"></i></div>`;
+
+  let qSub = "—";
+  if (isLLM && s.ci95_low !== undefined && s.n_prompts > 1) {
+    qSub = `95% CI ${f3(s.ci95_low)}–${f3(s.ci95_high)}`;
+  } else if (!isLLM) {
+    qSub = q === null ? "no labels supplied" : "accuracy vs labels";
+  }
+
+  document.getElementById("tiles").innerHTML = `
+    <div class="tile">
+      <div class="k">Quality</div>
+      <div class="v ${q === null ? "neutral" : qGood ? "ok" : "bad"}">${f3(q)}</div>
+      <div class="s">${qSub}</div>
+      ${q === null ? "" : bar(q, qGood)}
+    </div>
+    <div class="tile">
+      <div class="k">Drift score</div>
+      <div class="v ${latest && latest.is_drifted ? "bad" : "neutral"}">${f3(d)}</div>
+      <div class="s">${isLLM ? "1 − mean similarity" : `${s.n_flagged ?? 0}/${s.n_features ?? 0} features flagged`}</div>
+      ${d === null ? "" : bar(d, !(latest && latest.is_drifted))}
+    </div>
+    <div class="tile">
+      <div class="k">Alert threshold</div>
+      <div class="v neutral">${t ? t.value : "—"}</div>
+      <div class="s">${t ? `alerts when ${t.metric} goes ${t.dir}` : "—"}</div>
+    </div>
+    <div class="tile">
+      <div class="k">Open alerts</div>
+      <div class="v ${alerts.length ? "bad" : "ok"}">${alerts.length}</div>
+      <div class="s">${history.length} run${history.length === 1 ? "" : "s"} recorded</div>
+    </div>`;
+}
+
+function renderChart() {
+  const rows = history.slice().reverse();
+  const labels = rows.map(r => time(r.timestamp));
+  const quality = rows.map(r => r.quality_score);
+  const drift = rows.map(r => r.drift_score);
+  const t = thresholdOf(rows[rows.length - 1]);
+  const thr = rows.map(() => t ? t.value : null);
+
+  document.getElementById("chartNote").textContent = t
+    ? `dashed line = alert threshold (${t.value})` : "";
+
+  const ds = [
+    { label: "Quality", data: quality, borderColor: "#45c8b8", backgroundColor: "rgba(69,200,184,.10)",
+      tension: .3, pointRadius: 2.5, pointHoverRadius: 5, borderWidth: 2, fill: true, spanGaps: true },
+    { label: "Drift", data: drift, borderColor: "#e5484d", backgroundColor: "transparent",
+      tension: .3, pointRadius: 2, borderWidth: 1.5 },
+    { label: "Alert threshold", data: thr, borderColor: "#f0b429", borderDash: [5, 4],
+      borderWidth: 1.2, pointRadius: 0, fill: false },
+  ];
+
+  if (!chart) {
+    chart = new Chart(document.getElementById("chart"), {
       type: "line",
-      data: {
-        labels,
-        datasets: [
-          { label: "Drift Score", data: driftData, borderColor: "#f2545b", backgroundColor: "#f2545b22", tension: 0.25, pointRadius: 2 },
-          { label: "Quality Score", data: qualityData, borderColor: "#4fd1c5", backgroundColor: "#4fd1c522", tension: 0.25, pointRadius: 2 },
-          { label: "Alert threshold", data: thresholdData, borderColor: "#e9b949", borderDash: [6, 4], borderWidth: 1, pointRadius: 0, fill: false },
-        ],
-      },
+      data: { labels, datasets: ds },
       options: {
-        responsive: true,
-        maintainAspectRatio: false,
+        responsive: true, maintainAspectRatio: false,
+        interaction: { mode: "index", intersect: false },
+        onClick: (_e, els) => { if (els.length) selectRun(rows[els[0].index].id); },
         scales: {
-          x: { ticks: { color: "#7a8194", maxRotation: 0 }, grid: { color: "#232838" } },
-          y: { min: 0, max: 1, ticks: { color: "#7a8194" }, grid: { color: "#232838" } },
+          x: { ticks: { color: "#6b7585", font: { size: 10 }, maxRotation: 0, autoSkipPadding: 22 },
+               grid: { color: "#1d242e" } },
+          y: { min: 0, max: 1, ticks: { color: "#6b7585", font: { size: 10 }, stepSize: .25 },
+               grid: { color: "#1d242e" } },
         },
-        plugins: { legend: { labels: { color: "#d7dbe5" } } },
+        plugins: {
+          legend: { labels: { color: "#98a2b3", boxWidth: 11, boxHeight: 11, font: { size: 11 }, usePointStyle: true } },
+          tooltip: {
+            backgroundColor: "#0c1016", borderColor: "#242c38", borderWidth: 1,
+            titleColor: "#d8dee8", bodyColor: "#98a2b3", padding: 10, displayColors: true,
+          },
+        },
       },
     });
-    document.getElementById("trendChart").parentElement.style.height = "280px";
+    document.getElementById("chart").parentElement.style.height = "230px";
   } else {
-    trendChart.data.labels = labels;
-    trendChart.data.datasets[0].data = driftData;
-    trendChart.data.datasets[1].data = qualityData;
-    trendChart.data.datasets[2].data = thresholdData;
-    trendChart.update();
+    chart.data.labels = labels;
+    chart.data.datasets.forEach((d, i) => d.data = ds[i].data);
+    chart.options.onClick = (_e, els) => { if (els.length) selectRun(rows[els[0].index].id); };
+    chart.update("none");
   }
 }
 
-function renderHistoryTable(history) {
+function renderHistory() {
   const body = document.getElementById("historyBody");
-  if (history.length === 0) {
-    body.innerHTML = '<tr><td colspan="5" class="empty">No runs yet</td></tr>';
+  if (!history.length) {
+    body.innerHTML = '<tr><td colspan="6" class="empty">No runs recorded yet.</td></tr>';
     return;
   }
-  body.innerHTML = "";
-  history.forEach((run) => {
-    const tr = document.createElement("tr");
-    tr.innerHTML = `
-      <td>${fmtTime(run.timestamp)}</td>
-      <td>v${run.version}</td>
-      <td>${fmtScore(run.drift_score)}</td>
-      <td>${fmtScore(run.quality_score)}</td>
-      <td><span class="badge ${run.is_drifted ? "drifted" : "clean"}">${run.is_drifted ? "Drifted" : "Clean"}</span></td>
-    `;
-    tr.onclick = () => openDrawer(run);
-    body.appendChild(tr);
-  });
+  body.innerHTML = history.map((r, i) => {
+    const prev = history[i + 1];
+    let delta = "—", cls = "";
+    if (prev && r.quality_score !== null && prev.quality_score !== null) {
+      const d = r.quality_score - prev.quality_score;
+      delta = (d >= 0 ? "+" : "") + d.toFixed(3);
+      cls = d >= 0 ? "up" : "down";
+    }
+    return `<tr data-run="${r.id}" class="${selectedRun === r.id ? "sel" : ""}">
+      <td>${time(r.timestamp)}</td><td>v${r.version}</td>
+      <td>${f3(r.quality_score)}</td>
+      <td class="delta ${cls}">${delta}</td>
+      <td>${f3(r.drift_score)}</td>
+      <td><span class="tag ${r.is_drifted ? "drift" : "clean"}">${r.is_drifted ? "drift" : "ok"}</span></td>
+    </tr>`;
+  }).join("");
+  [...body.querySelectorAll("tr[data-run]")].forEach(tr =>
+    tr.onclick = () => selectRun(Number(tr.dataset.run)));
 }
 
-function renderAlerts(alerts) {
-  const list = document.getElementById("alertsList");
-  if (alerts.length === 0) {
-    list.innerHTML = '<div class="empty">No active alerts</div>';
-    return;
+function renderSignals(run) {
+  const box = document.getElementById("signals");
+  const note = document.getElementById("sigNote");
+  if (!run || !run.signals || !run.signals.length) {
+    box.innerHTML = '<div class="empty">No run selected.</div>'; note.textContent = ""; return;
   }
-  list.innerHTML = "";
-  alerts.forEach((a) => {
-    const row = document.createElement("div");
-    row.className = "alert-row";
-    row.innerHTML = `<span class="alert-msg">${a.message}</span><span class="alert-time">${fmtTime(a.created_at)}</span>`;
-    list.appendChild(row);
-  });
+  const isLLM = model && model.adapter_name === "llm";
+  const t = thresholdOf(run);
+  note.textContent = isLLM ? "similarity per golden prompt" : "KS statistic per feature";
+
+  const rows = run.signals.slice().sort((a, b) => isLLM ? a.value - b.value : b.value - a.value);
+  box.innerHTML = rows.map(s => {
+    const bad = s.is_drifted;
+    const pct = Math.max(2, Math.min(100, s.value * 100));
+    const thrPct = (isLLM && t) ? Math.min(100, t.value * 100) : null;
+    return `<div class="sig">
+      <div class="sig-top">
+        <span class="sig-name" title="${esc(s.name)}">${esc(s.name)}</span>
+        <span class="sig-val ${bad ? "bad" : "ok"}">${f3(s.value)}</span>
+      </div>
+      <div class="bar">
+        <i style="width:${pct}%;background:${bad ? "var(--danger)" : "var(--teal)"}"></i>
+        ${thrPct !== null ? `<span class="thr" style="left:${thrPct}%"></span>` : ""}
+      </div>
+    </div>`;
+  }).join("") +
+  (isLLM ? `<div style="font-size:11px;color:var(--text-3);margin-top:10px;">
+      Lowest-scoring prompts first — these are what pull the average down.
+      The amber mark is the alert threshold.</div>` : "");
 }
 
-function openDrawer(run) {
-  const list = document.getElementById("signalList");
-  list.innerHTML = "";
-  if (run.statistics && Object.keys(run.statistics).length) {
-    const st = document.createElement("div");
-    st.className = "signal-item";
-    st.innerHTML = `<div class="name">how this verdict was reached</div>` +
-      `<pre>${JSON.stringify(run.statistics, null, 2)}</pre>`;
-    list.appendChild(st);
-  }
-  if (!run.signals || run.signals.length === 0) {
-    list.innerHTML = '<div class="empty">No per-signal data for this run</div>';
-  } else {
-    run.signals.forEach((s) => {
-      const el = document.createElement("div");
-      el.className = "signal-item";
-      el.innerHTML = `
-        <div class="name">${s.name}</div>
-        <div class="val">value=${s.value.toFixed(4)} &middot; ${s.is_drifted ? '<span style="color:var(--danger)">DRIFTED</span>' : '<span style="color:var(--ok)">clean</span>'}</div>
-        <pre>${JSON.stringify(s.detail, null, 2)}</pre>
-      `;
-      list.appendChild(el);
-    });
-  }
-  document.getElementById("signalDrawer").classList.add("open");
+function renderAlerts() {
+  const box = document.getElementById("alerts");
+  if (!alerts.length) { box.innerHTML = '<div class="empty">None.</div>'; return; }
+  box.innerHTML = alerts.map(a => `
+    <div class="item flagged">
+      <div style="color:var(--danger);font-family:var(--mono);">${esc(a.message)}</div>
+      <div style="color:var(--text-3);font-size:10.5px;margin-top:4px;">${day(a.created_at)}</div>
+    </div>`).join("");
 }
 
-function closeDrawer() {
-  document.getElementById("signalDrawer").classList.remove("open");
+function renderExplain() {
+  const isLLM = model && model.adapter_name === "llm";
+  const el = document.getElementById("explain");
+  el.innerHTML = isLLM ? `
+    <p><b>What is being watched.</b> Sanad's chatbot. A fixed <b>golden set</b> of questions with
+    known-correct answers is replayed through the live app, and each returned answer is compared
+    with its expected answer.</p>
+    <p><b>How the number is produced.</b> Similarity is <code>TF-IDF cosine</code> between the actual
+    and expected answer. <b>Quality</b> is the mean across prompts; <b>drift</b> is
+    <code>1 − quality</code>. An alert fires when quality falls below the threshold.</p>
+    <p><b>How to read it.</b> Flat is correct when nothing changed — the detector is not supposed to
+    invent movement. Judge a change against the confidence interval on the quality tile: a shift
+    smaller than that interval is noise, not a regression.</p>
+    <p><b>What it cannot do.</b> TF-IDF is lexical, so a correct paraphrase using different words
+    scores low, while a wrong answer reusing the question's vocabulary scores high.</p>`
+  : `
+    <p><b>What is being watched.</b> A tabular classifier's input distribution. Each incoming batch
+    of features is compared against the feature distribution stored at registration.</p>
+    <p><b>How the number is produced.</b> A <code>Kolmogorov–Smirnov two-sample test</code> per
+    feature asks whether the new values could plausibly come from the baseline distribution.
+    <b>Drift score</b> is the fraction of features flagged; an alert fires once that fraction
+    crosses the threshold.</p>
+    <p><b>Why the threshold is divided.</b> Testing many features separately inflates false alarms,
+    so a <code>Bonferroni</code> correction divides the per-feature p-value threshold by the number
+    of features. Measured on a 2-feature model this cut false alarms on clean data from 13.2% to 6.4%.</p>
+    <p><b>What it cannot do.</b> It watches inputs, not correctness. A model can be fed a perfectly
+    familiar distribution and still be wrong; quality only appears here when labels are supplied.</p>`;
+}
+
+/* ---------------- drawer ---------------- */
+function selectRun(id) {
+  selectedRun = id;
+  const run = history.find(r => r.id === id);
+  if (!run) return;
+  renderHistory();
+  renderSignals(run);
+
+  document.getElementById("drawerTitle").textContent =
+    (run.is_drifted ? "Drift detected" : "Clean run") + " · v" + run.version;
+  document.getElementById("drawerSub").textContent = day(run.timestamp) + " · run #" + run.id;
+
+  const st = run.statistics || {};
+  const pairs = Object.entries(st);
+  document.getElementById("drawerStats").innerHTML = pairs.length
+    ? pairs.map(([k, v]) =>
+        `<div class="k">${esc(k)}</div><div>${typeof v === "number" ? (Number.isInteger(v) ? v : v.toFixed(4)) : esc(String(v))}</div>`).join("")
+    : `<div class="k">—</div><div>no statistics recorded</div>`;
+
+  document.getElementById("drawerSignals").innerHTML = (run.signals || []).map(s => `
+    <div class="item ${s.is_drifted ? "flagged" : ""}">
+      <div class="n">${esc(s.name)}</div>
+      <div style="margin-top:4px;color:${s.is_drifted ? "var(--danger)" : "var(--text-2)"};font-family:var(--mono);">
+        ${f3(s.value)} ${s.is_drifted ? "· flagged" : ""}
+      </div>
+      <pre>${esc(JSON.stringify(s.detail, null, 2))}</pre>
+    </div>`).join("");
+
+  document.getElementById("drawer").classList.add("open");
+}
+function closeDrawer() { document.getElementById("drawer").classList.remove("open"); }
+document.addEventListener("keydown", e => { if (e.key === "Escape") closeDrawer(); });
+
+/* ---------------- refresh loop ---------------- */
+async function loadModels() {
+  const models = await get("/models");
+  const sel = document.getElementById("modelSelect");
+  const prev = modelId;
+  if (!models.length) {
+    sel.innerHTML = "<option>no models registered</option>";
+    modelId = null; model = null; return false;
+  }
+  sel.innerHTML = models.map(m =>
+    `<option value="${m.model_id}">${esc(m.name)} · ${m.adapter_name}</option>`).join("");
+  modelId = (prev && models.some(m => m.model_id === prev)) ? prev : models[0].model_id;
+  sel.value = modelId;
+  model = models.find(m => m.model_id === modelId);
+  return true;
 }
 
 async function refresh() {
   try {
-    await loadModels();
-    if (!currentModelId) return;
-
-    const [model, history, alerts] = await Promise.all([
-      fetchJson(`/models/${currentModelId}`),
-      fetchJson(`/models/${currentModelId}/history`),
-      fetchJson(`/alerts?model_id=${currentModelId}&active_only=true`),
+    if (!(await loadModels())) return;
+    [history, alerts] = await Promise.all([
+      get(`/models/${modelId}/history`),
+      get(`/alerts?model_id=${modelId}&active_only=true`),
     ]);
-
-    currentHistory = history;
-    renderTiles(model, history, alerts);
-    renderChart(history);
-    renderHistoryTable(history);
-    renderAlerts(alerts);
-  } catch (err) {
-    console.error("dashboard refresh failed", err);
-  }
+    const latest = history[0] || null;
+    renderStatus(latest);
+    renderIdentity(latest);
+    renderTiles(latest);
+    renderChart();
+    renderHistory();
+    renderAlerts();
+    renderExplain();
+    const sel = history.find(r => r.id === selectedRun) || latest;
+    if (sel) renderSignals(sel);
+  } catch (e) { console.error("refresh failed", e); }
 }
 
-document.getElementById("modelSelect").addEventListener("change", (e) => {
-  currentModelId = e.target.value;
+document.getElementById("modelSelect").addEventListener("change", e => {
+  modelId = e.target.value; selectedRun = null;
+  if (chart) { chart.destroy(); chart = null; }
   refresh();
 });
 
 refresh();
-setInterval(refresh, POLL_INTERVAL_MS);
+setInterval(refresh, POLL_MS);
 </script>
 </body>
 </html>
