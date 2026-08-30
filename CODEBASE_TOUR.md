@@ -119,13 +119,17 @@ Built on top of everything above, without changing any of it:
   two-proportion-z-test functions, decoupled from any adapter.
 - **`modelwatch/adapters/rag_adapter.py`** — a fourth adapter
   (`adapter_name="rag"`) that runs those tests against the richer
-  telemetry: four independent signals (retrieval, generation latency,
-  refusal, citation validity), never collapsed into one number.
-  `live_telemetry` still works unchanged for anything already registered
-  against it.
+  telemetry: five independent signals (retrieval, generation latency,
+  refusal, citation validity, and a question-embedding distribution
+  shift via Maximum Mean Discrepancy — `embedding_drift()` in
+  `detectors.py`), never collapsed into one number. `live_telemetry`
+  still works unchanged for anything already registered against it.
 - **`modelwatch/core/health.py`** — alert hysteresis
   (healthy→warning→degraded→recovering→healthy), defaulted to reproduce
-  the original one-shot alerting exactly.
+  the original one-shot alerting exactly. `modelwatch/core/calibration.py`
+  and `scripts/calibrate_hysteresis.py` turn the hysteresis threshold
+  into something computed from a measured false-positive rate rather
+  than hand-picked.
 - **`modelwatch/diagnosis/engine.py`** — given a drifted run's signals,
   ranks which subsystem (retrieval/generation/operational) is the likely
   cause, with a documented (not black-box) scoring rule. Shows up in the
@@ -139,8 +143,9 @@ Built on top of everything above, without changing any of it:
   `scripts/quality_gate.py` (a real CI-style regression gate).
 
 Full writeup, including what's been measured and what hasn't (detection
-delay and hysteresis-adjusted false-positive rate are open), in
-**`docs/research.md`**.
+delay is still open; hysteresis-adjusted false-positive rate has a real
+calibrated number now, but the independence assumption behind it hasn't
+been verified against real sequential traffic), in **`docs/research.md`**.
 
 ## Questions you should be ready for
 

@@ -37,8 +37,13 @@ against them:
 - **generation_latency** -- KS on per-request generation latency
 - **refusal** -- two-proportion z-test on grounded/refused counts
 - **citation_validity** -- two-proportion z-test on valid vs. requested citations
+- **embedding** -- Maximum Mean Discrepancy (MMD) on the distribution of
+  question embedding vectors, catching a topic/phrasing shift the other
+  four signals can't see (see `embedding_drift()` in `detectors.py`).
+  Needs Sanad's full-trace telemetry on; reports insufficient data
+  otherwise rather than a fabricated verdict.
 
-This is the "RAG quality vector" the project brief asked for: four
+This is the "RAG quality vector" the project brief asked for: five
 independent signals, never collapsed into one opaque number.
 `drift_score` (fraction of signals drifted) is reported alongside the
 full per-signal breakdown, not instead of it.
@@ -57,11 +62,14 @@ original "alert on the very first drifted check" behavior exactly, so
 existing callers see no behavior change. Raising the threshold via env
 var is the recommended production setting once a model has enough
 traffic for consecutive batches to mean something -- see
-`modelwatch/config.py`.
+`modelwatch/config.py`. Rather than hand-picking that number,
+`scripts/calibrate_hysteresis.py` computes a recommendation from a
+measured single-check false-positive rate (`modelwatch/core/
+calibration.py`); see `docs/research.md`'s H2 for a worked example.
 
 ## Root-cause diagnosis (`modelwatch/diagnosis/engine.py`)
 
-Given a drifted run's four RAGAdapter signals, ranks three subsystem
+Given a drifted run's RAGAdapter signals, ranks three subsystem
 hypotheses -- `retrieval`, `generation`, `operational` -- using a fixed,
 documented rule: retrieval drift plus downstream citation/refusal drift
 is attributed to retrieval (worse context -> more refusals/bad
@@ -72,6 +80,12 @@ signals already reported (not invented), clamped to 1.0. The full
 ranking (not just the top pick) is always returned, exposed in the
 dashboard's "Why this alert?" panel next to the raw statistics behind
 it.
+
+The `embedding` signal is deliberately not wired into these rules: a
+question-distribution shift isn't obviously a retrieval/generation/
+operational symptom the way the other four are -- it can just as
+easily mean a genuine change in user behavior. It still counts toward
+`drift_score`/`is_drifted`; only subsystem attribution skips it.
 
 ## Known limitations
 

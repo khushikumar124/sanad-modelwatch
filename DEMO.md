@@ -30,7 +30,7 @@ Two tabs open: `http://localhost:8100/` (Sanad) and
 Lead with this — it's the strongest part.
 
 ```bash
-source .venv/bin/activate && python -m pytest sanad/tests/ modelwatch/tests/ -v
+source .venv/bin/activate && python -m pytest -v
 ```
 
 Point at `modelwatch/tests/test_classifier_adapter.py`: the drift tests use
@@ -134,7 +134,8 @@ The prof will probe. These are measured, not hedges:
   0.5B model, rather than a threshold tuned until the demo passed.
 - **TF-IDF is lexical, not semantic.** A correct paraphrase can score worse
   than a wrong answer reusing the same words.
-- **No multi-turn chat**, in-memory document registry, no auth.
+- **No multi-turn chat.** Each question is answered independently, with
+  no conversation history.
 
 ## 5. If there's real time left: the research extension
 
