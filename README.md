@@ -91,6 +91,9 @@ the full writeup:
   that ModelWatch is model-agnostic, not just Sanad-shaped: a RAG
   pipeline that has never imported anything from `sanad/`, monitored
   through nothing but `modelwatch-client`'s public API
+- **[`examples/classifier/`](examples/classifier/)** — the same
+  model-agnostic story for a completely different model type: a tabular
+  classifier, monitored with `ClassifierAdapter` through the same SDK
 
 ## Further reading
 
