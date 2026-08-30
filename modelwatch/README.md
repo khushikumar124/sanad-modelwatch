@@ -63,6 +63,17 @@ for recording traces from an existing LangChain RAG pipeline without
 hand-instrumenting it — see
 [`modelwatch-client/README.md`](../modelwatch-client/README.md).
 
+For a team that already has an MLflow tracking setup, `integrations/
+mlflow_export.py` exports each drift-check run (drift/quality scores,
+per-signal values, health state) there too, alongside ModelWatch's own
+storage and dashboard — not a replacement for either. Opt-in via
+`MODELWATCH_MLFLOW_ENABLED=true` (`pip install mlflow` first; it's
+deliberately not a hard dependency of this project, since it pulls in a
+meaningfully heavier stack than anything else here). Defaults to a
+local SQLite-backed tracking store (`MODELWATCH_MLFLOW_TRACKING_URI`,
+default `sqlite:///mlflow.db`) — point it at a real MLflow tracking
+server URL instead to use one.
+
 ## What is and isn't general
 
 "Model-agnostic" is true of the core and not of everything, so it is worth

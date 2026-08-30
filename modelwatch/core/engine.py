@@ -16,6 +16,7 @@ from modelwatch.core.adapter_base import ModelAdapter
 from modelwatch.core.health import next_health_state
 from modelwatch.core.storage import ModelNotFoundError, Storage
 from modelwatch.diagnosis.engine import DiagnosisResult, diagnose
+from modelwatch.integrations.mlflow_export import log_run_to_mlflow
 
 
 class RunNotFoundError(Exception):
@@ -120,6 +121,16 @@ class MonitoringEngine:
         self._storage.set_health(
             model_id, transition.state, transition.consecutive_drifted, transition.consecutive_clean
         )
+
+        if config.mlflow_enabled:
+            log_run_to_mlflow(
+                experiment_name=config.mlflow_experiment_name,
+                tracking_uri=config.mlflow_tracking_uri,
+                model_id=model_id,
+                version=model["current_version"],
+                result=result.to_dict(),
+                health_state=transition.state,
+            )
 
         alert_id = None
         if transition.should_create_alert:

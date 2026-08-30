@@ -95,5 +95,16 @@ class Config:
     # Default logging level for library/service code.
     log_level: str = os.environ.get("MODELWATCH_LOG_LEVEL", "INFO")
 
+    # Optional MLflow export (modelwatch/integrations/mlflow_export.py).
+    # Off by default -- mlflow is not a hard dependency of this project
+    # (see that module's docstring), so a fresh install must not require
+    # it. tracking_uri defaults to a local SQLite-backed store (no server
+    # needed) -- mlflow's older plain file store ("file:./mlruns") is in
+    # maintenance mode as of mlflow 3.x and rejects new runs by default.
+    # Point this at a real MLflow tracking server URL to use one instead.
+    mlflow_enabled: bool = _bool_env("MODELWATCH_MLFLOW_ENABLED", False)
+    mlflow_tracking_uri: str = os.environ.get("MODELWATCH_MLFLOW_TRACKING_URI", "sqlite:///mlflow.db")
+    mlflow_experiment_name: str = os.environ.get("MODELWATCH_MLFLOW_EXPERIMENT_NAME", "modelwatch")
+
 
 config = Config()
