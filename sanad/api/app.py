@@ -56,6 +56,7 @@ from sanad.ingestion.extraction import IMAGE_EXTENSIONS
 from sanad.rag.llm_client import LLMConnectionError, OllamaClient
 from sanad.rag.pipeline import ingest_document
 from sanad.rag.vector_store import VectorStore
+from sanad.security import UploadValidationError, validate_upload
 from sanad.storage import get_object_store
 
 logging.basicConfig(
@@ -149,8 +150,14 @@ async def upload_document(
             detail=f"unsupported file type '{ext}', expected one of {sorted(SUPPORTED_EXTENSIONS)}",
         )
 
+    data = await file.read()
+    try:
+        validate_upload(ext, data)
+    except UploadValidationError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
     doc_id = str(uuid.uuid4())
-    locator = object_store.save(doc_id, ext, await file.read())
+    locator = object_store.save(doc_id, ext, data)
 
     with object_store.open_local(locator) as local_path:
         ingested = ingest_document(local_path, doc_id, vector_store)

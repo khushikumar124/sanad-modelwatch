@@ -62,6 +62,20 @@ class Config:
     api_port: int = _int_env("SANAD_API_PORT", 8100)
     upload_dir: str = os.environ.get("SANAD_UPLOAD_DIR", "sanad_uploads")
 
+    # Upload hardening (sanad/security.py). The extension check alone
+    # (SUPPORTED_EXTENSIONS in api/app.py) only looks at the filename a
+    # client claims -- it never verifies the bytes actually are what they
+    # claim to be, and has no size ceiling at all.
+    max_upload_mb: int = _int_env("SANAD_MAX_UPLOAD_MB", 25)
+    # Optional ClamAV daemon (clamd) for a real malware scan. Empty by
+    # default: this is infrastructure a local dev setup shouldn't have to
+    # run, so with it unset, upload validation still checks size and
+    # magic bytes but skips the malware scan -- see security.py's
+    # docstring for why this fails open rather than blocking uploads
+    # when clamd isn't configured or isn't reachable.
+    clamav_host: str = os.environ.get("SANAD_CLAMAV_HOST", "")
+    clamav_port: int = _int_env("SANAD_CLAMAV_PORT", 3310)
+
     # Object storage for the original uploaded file (not its extracted text,
     # which lives in the database via db.py regardless of this setting).
     # "local" writes straight to upload_dir and needs nothing installed --
