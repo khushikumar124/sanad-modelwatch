@@ -356,6 +356,10 @@
       <div class="sub">Per-request pipeline inspection: retrieval, ranking, claim verification, citations.</div>
     </div>
     <div class="panel">
+      <h2>Failure taxonomy <span class="note">per-request diagnosis, tallied across the requests below</span></h2>
+      <div id="failureTaxonomy"><div class="empty">Loading…</div></div>
+    </div>
+    <div class="panel">
       <h2>Recent requests <span class="note">click a row to inspect the pipeline</span>
         <span style="flex:1"></span>
         <select id="traceFilter" style="margin-left:auto;">
@@ -905,7 +909,40 @@ async function loadTraces() {
   try {
     const traces = await get(`/traces?${params}`);
     renderTraceList(traces);
+    loadFailureTaxonomy(traces);
   } catch (e) { console.error("loadTraces failed", e); }
+}
+
+/* Reuses the existing per-trace /traces/{id}/diagnosis endpoint --
+   no new backend logic, just a tally of what that endpoint already
+   returns for each of the currently-listed requests. Real counts from
+   real diagnoses, not a separate aggregate computation that could
+   drift from what a single trace's own drawer shows. */
+async function loadFailureTaxonomy(traces) {
+  const box = document.getElementById("failureTaxonomy");
+  if (!traces.length) { box.innerHTML = '<div class="empty">No requests to diagnose yet.</div>'; return; }
+  let diagnoses;
+  try {
+    diagnoses = await Promise.all(
+      traces.map(t => get(`/traces/${t.trace_id}/diagnosis`).catch(() => null))
+    );
+  } catch (e) { box.innerHTML = '<div class="empty">' + esc(e.message) + '</div>'; return; }
+
+  const counts = {};
+  for (const d of diagnoses) {
+    if (!d) continue;
+    counts[d.category] = (counts[d.category] || 0) + 1;
+  }
+  const total = Object.values(counts).reduce((a, b) => a + b, 0);
+  if (!total) { box.innerHTML = '<div class="empty">No diagnosable requests in this batch.</div>'; return; }
+
+  const rows = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+  box.innerHTML = '<div style="display:flex;flex-wrap:wrap;gap:8px;">' + rows.map(([cat, n]) => {
+    const isNone = cat === "none";
+    return `<div class="tag ${isNone ? "clean" : "drift"}" style="font-size:11px;">
+      ${esc(cat.replace(/_/g, " "))} &middot; ${n}/${total}
+    </div>`;
+  }).join("") + '</div>';
 }
 
 function renderTraceList(traces) {
