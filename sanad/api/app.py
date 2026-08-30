@@ -41,6 +41,8 @@ from sanad.api.schemas import (
     ObligationsResponse,
     ReviewResponse,
     RiskResponse,
+    ScenarioRequest,
+    ScenarioResponse,
     SessionResponse,
     SetModelRequest,
     SetModelResponse,
@@ -50,6 +52,7 @@ from sanad.config import config
 from sanad.features.chatbot import ask
 from sanad.features.comparison import compare_risk_reports
 from sanad.features.cross_document import ask_across_documents
+from sanad.features.scenario import simulate_scenario
 from sanad.features.contradictions import find_contradictions
 from sanad.features.coverage import check_coverage
 from sanad.features.obligations import extract_obligations
@@ -434,6 +437,24 @@ def chat_with_document(
         question_embedding=vector_store.embedder.embed_one(req.question) if config.telemetry_full_trace else None,
     )
     return {**result.to_dict(), "trace": trace.to_dict()}
+
+
+@app.post("/api/documents/{doc_id}/scenario", response_model=ScenarioResponse)
+def simulate_document_scenario(
+    doc_id: str, req: ScenarioRequest, _user: str | None = Depends(require_user)
+):
+    """"What happens if I resign after two years?" -- see
+    sanad/features/scenario.py for why this needs its own prompt rather
+    than reusing chat_with_document(): measured directly, the same
+    retrieval and model refused an on-point scenario question through
+    the generic chat prompt, and correctly grounded it through this
+    scenario-framed one."""
+    _get_record(doc_id, _user)
+    try:
+        result = simulate_scenario(doc_id, req.scenario, vector_store, llm_client)
+    except LLMConnectionError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    return result.to_dict()
 
 
 @app.post("/api/documents/cross-chat", response_model=CrossChatResponse)

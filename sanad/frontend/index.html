@@ -564,6 +564,7 @@
           <button class="tab active" data-pane="risks">Risk scan <span class="count" id="tabRiskCount"></span></button>
           <button class="tab" data-pane="summary">Summary</button>
           <button class="tab" data-pane="ask">Ask</button>
+          <button class="tab" data-pane="scenario">Scenario</button>
           <button class="tab" data-pane="compare">Compare</button>
           <button class="tab" data-pane="review">Review</button>
           <button class="tab" data-pane="document">Document</button>
@@ -581,6 +582,16 @@
               <input type="text" id="chatInput" placeholder="Ask about a specific term…" />
               <button class="btn" id="askBtn">Ask</button>
             </div>
+          </div>
+        </div>
+        <div class="pane" id="pane-scenario" hidden>
+          <div class="wrap">
+            <p class="fineprint" style="margin-bottom:12px;max-width:520px;">Describe a hypothetical situation in your own words -- it doesn't need to match the contract's wording. This traces which clause(s) actually govern it, the same way the Ask tab does, but with analysis tuned for "what if" questions rather than direct lookups.</p>
+            <div style="display:flex;gap:10px;">
+              <input type="text" id="scenarioInput" placeholder="e.g. What happens if I want to leave before the lease ends?" style="flex:1;" />
+              <button class="btn" id="scenarioBtn">Analyze</button>
+            </div>
+            <div id="scenarioResult"></div>
           </div>
         </div>
         <div class="pane" id="pane-compare" hidden>
@@ -789,7 +800,7 @@ async function upload(file) {
 /* ---------------- tabs ---------------- */
 function showTab(name, jumpToClause) {
   document.querySelectorAll(".tab").forEach(t => t.classList.toggle("active", t.dataset.pane === name));
-  ["risks", "summary", "ask", "compare", "review", "document"].forEach(p => {
+  ["risks", "summary", "ask", "scenario", "compare", "review", "document"].forEach(p => {
     document.getElementById("pane-" + p).hidden = p !== name;
   });
   // Retrigger the entrance animation on the pane we just revealed --
@@ -919,6 +930,33 @@ async function loadComparison() {
     const c = await api("/documents/" + currentId + "/compare/" + sel.value);
     renderComparison(c);
   } catch (e) { body.innerHTML = '<p class="none">' + esc(e.message) + '</p>'; }
+}
+
+async function runScenario() {
+  const input = document.getElementById("scenarioInput");
+  const result = document.getElementById("scenarioResult");
+  const scenario = input.value.trim();
+  if (!scenario || !currentId) return;
+  const id = currentId;
+  result.innerHTML = '<div class="bubble"><span class="thinking"><i></i><i></i><i></i></span></div>';
+  try {
+    const a = await api("/documents/" + id + "/scenario", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ scenario }),
+    });
+    if (currentId !== id) return;
+    const cites = (a.cited_chunks || []).map(c =>
+      '<div class="cite-body"><div class="cite-head">' +
+      esc(c.metadata.heading || ("clause " + c.metadata.chunk_index)) + '</div>' +
+      '<div class="cite-text">' + esc(c.text.slice(0, 240)) + (c.text.length > 240 ? "…" : "") +
+      '</div></div>').join("");
+    result.innerHTML = '<div class="bubble ' + (a.grounded ? "" : "refused") + '">' + esc(a.answer) + '</div>' +
+      (cites ? '<details class="cite"><summary>❝ ' + a.cited_chunks.length + ' clause' +
+        (a.cited_chunks.length > 1 ? "s" : "") + ' governing this scenario</summary>' + cites + '</details>' : "");
+  } catch (e) {
+    if (currentId !== id) return;
+    result.innerHTML = '<div class="bubble refused">' + esc(e.message) + '</div>';
+  }
 }
 
 async function askAcrossDocuments() {
@@ -1362,6 +1400,8 @@ document.addEventListener("DOMContentLoaded", async () => {
   document.getElementById("chatInput").addEventListener("keydown", e => { if (e.key === "Enter") ask(); });
   document.getElementById("crossChatBtn").onclick = askAcrossDocuments;
   document.getElementById("crossChatInput").addEventListener("keydown", e => { if (e.key === "Enter") askAcrossDocuments(); });
+  document.getElementById("scenarioBtn").onclick = runScenario;
+  document.getElementById("scenarioInput").addEventListener("keydown", e => { if (e.key === "Enter") runScenario(); });
   document.getElementById("compareSelect").onchange = loadComparison;
 
   document.getElementById("deleteBtn").onclick = async () => {

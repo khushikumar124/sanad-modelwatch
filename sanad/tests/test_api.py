@@ -203,6 +203,44 @@ def test_cross_chat_success_path_cites_chunks_from_both_documents(uploaded_doc_i
     assert doc_ids_cited == {uploaded_doc_id, second_doc_id}
 
 
+def test_scenario_unknown_document_returns_404():
+    res = client.post("/api/documents/does-not-exist/scenario", json={"scenario": "anything"})
+    assert res.status_code == 404
+
+
+def test_scenario_returns_503_when_llm_unreachable(uploaded_doc_id, llm_unreachable):
+    res = client.post(
+        f"/api/documents/{uploaded_doc_id}/scenario",
+        json={"scenario": "What happens if I leave early?"},
+    )
+    assert res.status_code == 503
+
+
+def test_scenario_success_path_returns_grounded_analysis(uploaded_doc_id):
+    from sanad.api import app as app_module
+
+    class FakeClient:
+        model = "fake-model"
+
+        def generate(self, system_prompt, user_prompt, response_schema=None, timeout=180):
+            return '{"grounded": true, "answer": "One month notice applies.", "cited_excerpts": [1]}'
+
+    original = app_module.llm_client
+    app_module.llm_client = FakeClient()
+    try:
+        res = client.post(
+            f"/api/documents/{uploaded_doc_id}/scenario",
+            json={"scenario": "What happens if I want to leave early?"},
+        )
+    finally:
+        app_module.llm_client = original
+
+    assert res.status_code == 200
+    body = res.json()
+    assert body["grounded"] is True
+    assert len(body["cited_chunks"]) == 1
+
+
 @pytest.fixture
 def llm_unreachable():
     """Point the app's LLM client at a port with no listener.

@@ -60,6 +60,18 @@ class CrossChatResponse(BaseModel):
     parse_error: bool
 
 
+class ScenarioRequest(BaseModel):
+    scenario: str
+
+
+class ScenarioResponse(BaseModel):
+    answer: str
+    grounded: bool
+    cited_chunks: list[dict[str, Any]]
+    retrieved_chunks: list[dict[str, Any]]
+    parse_error: bool
+
+
 class SetModelRequest(BaseModel):
     model: str
 
