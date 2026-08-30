@@ -14,6 +14,54 @@ Two adapters ship with it:
 - **LLMAdapter** — LLM apps, monitored via a golden question/answer set.
   Drift/quality = TF-IDF cosine similarity between actual and expected
   answers on a new batch.
+- **RAGAdapter** — a fourth adapter for RAG apps specifically, running
+  real statistical tests (KS, Wasserstein, PSI, two-proportion z-test —
+  `drift/detectors.py`) on four independent signals: retrieval-score
+  distribution, generation latency, refusal rate, citation validity.
+  Never collapsed into one number, and every result carries a p-value/
+  effect-size/confidence — "insufficient data" rather than a fabricated
+  score when a batch is too small to say anything.
+
+Built on the same signals, an **RAG reliability layer** for debugging,
+not just alerting:
+
+- **RAG X-Ray** (`core/storage.py`'s `traces` table, dashboard trace
+  browser) — full per-request pipeline traces (retrieved chunks with
+  similarity scores, claim-level evidence verification, citation
+  checks), so a bad answer is debuggable, not just flagged. Requires the
+  monitored app to opt into full-trace telemetry (Sanad:
+  `SANAD_TELEMETRY_FULL_TRACE`) — a documented, reversible tradeoff since
+  it means ModelWatch sees real question/answer/clause text.
+- **Diagnosis engine** (`diagnosis/engine.py` for a drifted batch,
+  `diagnosis/trace_diagnosis.py` for one request) — given a drift alert
+  or a single bad trace, ranks which subsystem (retrieval, generation,
+  operational) is the likely cause, with a documented scoring rule, not
+  a black box. Shows up in the dashboard as "Why this alert?".
+- **Alert hysteresis** (`core/health.py`) — a
+  healthy→warning→degraded→recovering→healthy state machine, so a
+  relapse needs several consecutive drifted batches, not one noisy one,
+  before it pages anyone.
+- **Drift Lab** (`experiments/drift_lab.py`) — controlled failure
+  injection against Sanad's real pipeline (retrieval narrowing, chunk
+  fragmentation), for testing whether the detectors actually catch a
+  known problem instead of only working on paper.
+- **Benchmark/ablation framework** (`experiments/benchmark.py`) —
+  compares detection methods, and drops each RAGAdapter signal in turn,
+  on synthetic trials with known ground truth. Real measured numbers
+  (not aspirational ones) are in
+  [`docs/research.md`](../docs/research.md) and
+  [`docs/experiments.md`](../docs/experiments.md).
+- **Alert delivery** (`alerts/notifier.py`) — an alert transition can
+  push to a webhook (Slack incoming-webhook JSON, or a generic JSON
+  payload), configured via `MODELWATCH_ALERT_WEBHOOK_URL`.
+
+For adopting any of this outside this repo, `modelwatch-client/` is a
+standalone, pip-installable client (`pip install -e ./modelwatch-client`)
+with a LangChain callback handler
+(`modelwatch_client.integrations.langchain.ModelWatchCallbackHandler`)
+for recording traces from an existing LangChain RAG pipeline without
+hand-instrumenting it — see
+[`modelwatch-client/README.md`](../modelwatch-client/README.md).
 
 ## What is and isn't general
 

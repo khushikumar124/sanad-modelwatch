@@ -18,8 +18,41 @@ scanned image and get:
   contract. Detection is rule-based, not LLM-judged — see
   `features/risk_flagger.py` for why.
 
-Both features share one ingestion pipeline (extraction → chunking →
-embedding → vector store) — see `rag/pipeline.py`.
+Built on top of those, a **contract intelligence** layer (`features/`):
+
+- **Obligation extraction** (`obligations.py`) — who owes what to whom,
+  with a deadline where the document states one. Every extracted
+  obligation is grounded back to the chunk it came from (exact match,
+  falling back to content-word overlap for paraphrase) — an obligation
+  the grounding check can't locate in the document is dropped rather
+  than shown as fact.
+- **Coverage scan** (`coverage.py`) — checks the document against 9
+  standard clause categories (termination, notice period,
+  confidentiality, IP ownership, dispute resolution, liability, payment,
+  renewal, governing law) and reports which ones this rule-based scan
+  didn't find. `not_found` never means "missing" — only that nothing
+  matched these patterns.
+- **Contradiction detection** (`contradictions.py`) — flags conflicting
+  duration statements (e.g. two different notice periods), scoped to the
+  categories where a numeric mismatch is unambiguous rather than
+  guessed.
+- **Review synthesis** (`review.py`) — combines risk findings, coverage
+  gaps, and contradictions into one report, with a suggested negotiation
+  question per flagged risk. Pure synthesis of already-computed results,
+  no additional LLM call.
+- **Risk heatmap + click-to-source** (`frontend/index.html`) — every
+  clause in the document is addressable by index (`/api/documents/{id}/clauses`),
+  so a risk/coverage/obligation finding can jump straight to the exact
+  clause it's about, and the heatmap colors the whole document by
+  per-clause severity.
+- **Document comparison** (`comparison.py`) — diffs the risk profile of
+  two uploaded documents (e.g. two drafts of the same contract).
+
+All features share one ingestion pipeline (extraction → chunking →
+embedding → vector store) — see `rag/pipeline.py` — and one document
+registry (`db.py`, SQLite by default, Postgres via `SANAD_DATABASE_URL`)
+and object store (`storage.py`, local disk by default, S3-compatible via
+`SANAD_STORAGE_BACKEND=s3`) for the underlying data.
 
 Sanad's chatbot is monitored by [ModelWatch](../modelwatch) (a separate,
 reusable framework) via its `LLMAdapter` — see
@@ -269,14 +302,16 @@ actual scanned document).
 - **OCR quality depends on scan quality.** Tesseract (English pack only)
   can misread stamps, seals, handwriting, or the ₹ symbol on lower-quality
   scans; there's no confidence scoring or manual-correction flow.
-- **Document metadata is a JSON file per upload, not a database.** Each
-  upload writes a small record next to the stored file, and the registry is
-  rebuilt from those at startup, so a restart no longer invalidates a
-  `doc_id` a browser is holding. It is still flat files with no locking or
-  migrations — fine for one process, not for concurrent writers.
-- **No authentication, no multi-tenancy.** One shared ChromaDB collection
-  filtered by `doc_id`; fine for a single-user local demo, not for
-  multiple untrusted users sharing one deployment.
+- **Document metadata lives in a real database** (`db.py`, SQLAlchemy Core
+  over SQLite by default, or Postgres via `SANAD_DATABASE_URL`) and the
+  original uploaded file in a real object store (`storage.py`, local disk
+  by default, or an S3-compatible bucket via `SANAD_STORAGE_BACKEND=s3`).
+  Both are still single-tenant: one shared ChromaDB collection filtered by
+  `doc_id`, no row/object-level access control.
+- **Authentication exists but is minimal.** Session-cookie login
+  (`SANAD_AUTH_ENABLED=true`) gates every route behind one shared set of
+  users (`SANAD_USERS`) — enough to keep a deployment off the open
+  internet, not multi-tenancy or per-user document isolation.
 - **No response streaming.** Summarize/chat calls block until the local
   model finishes generating the full response — there's no token-by-token
   streaming to the frontend, so a slow model feels slow with no
