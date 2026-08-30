@@ -125,3 +125,40 @@ def test_malformed_output_fails_safe(indexed_doc_id):
     assert result.grounded is False
     assert result.parse_error is True
     assert result.cited_chunks == []
+
+
+def test_retrieval_and_generation_latency_are_measured_separately(indexed_doc_id):
+    store, doc_id = indexed_doc_id
+    response = json.dumps({"grounded": True, "answer": "Payment is made per milestone.", "cited_excerpts": [1]})
+    client = FakeLLMClient(response)
+
+    result = ask(doc_id, "What are the payment terms?", store, client)
+
+    assert result.retrieval_latency_ms > 0
+    assert result.generation_latency_ms >= 0
+
+
+def test_no_indexed_content_still_reports_retrieval_latency(tmp_path):
+    store = VectorStore(persist_path=str(tmp_path / "chroma"))
+    client = NeverCalledLLMClient()
+
+    result = ask("nonexistent-doc-id", "What is the notice period?", store, client)
+
+    assert result.retrieval_latency_ms > 0
+    assert result.generation_latency_ms == 0.0
+
+
+def test_citations_requested_counts_before_filtering_to_valid(indexed_doc_id):
+    """cited_excerpts named an out-of-range index (99) alongside a valid
+    one -- citations_requested should count both, cited_chunks only the
+    valid one, so a caller can compute a citation-validity ratio."""
+    store, doc_id = indexed_doc_id
+    response = json.dumps(
+        {"grounded": True, "answer": "Payment is made per milestone.", "cited_excerpts": [1, 99]}
+    )
+    client = FakeLLMClient(response)
+
+    result = ask(doc_id, "What are the payment terms?", store, client)
+
+    assert result.citations_requested == 2
+    assert len(result.cited_chunks) == 1

@@ -1,0 +1,278 @@
+"""Reusable statistical drift detectors, decoupled from any adapter.
+
+Each function compares a baseline sample against a current sample and
+returns a DetectorResult with the raw statistic AND the p-value/effect
+size it was computed from -- never just a verdict. That's what lets a
+reader (or the diagnosis engine in modelwatch/diagnosis/) distinguish:
+
+* statistical significance -- "is this difference likely not noise?"
+  (p_value)
+* practical / effect-size significance -- "is this difference big enough
+  to matter?" (effect_size)
+
+A large sample can make a trivial difference statistically significant;
+a small sample can hide a large true difference. `drift_detected` here
+always requires the *statistical* test to clear its threshold -- callers
+that also want an effect-size floor (e.g. "and Wasserstein distance above
+X") should check effect_size themselves, since what counts as "large
+enough" is domain-specific and this module can't know it.
+
+Every detector also reports a `confidence` in [0, 1], defined the same
+way across detectors so they're comparable: for p-value-based tests,
+confidence = 1 - p_value (how unlikely the observed difference is under
+the null of "no real change"). PSI has no p-value by construction (it's
+a fixed-bin divergence, not a hypothesis test), so its confidence instead
+follows the standard PSI banding (see population_stability_index) --
+documented there, not invented ad hoc.
+"""
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from typing import Any, Sequence
+
+from scipy import stats
+
+#: Below this many observations in either sample, a test is not run --
+#: distributional tests on a handful of points produce p-values that look
+#: precise but aren't. Sliding-window / hysteresis logic (modelwatch/core)
+#: is expected to check `insufficient_sample` before treating a result as
+#: real, rather than silently declaring "no drift" for the wrong reason.
+MIN_SAMPLE_SIZE = 8
+
+
+@dataclass
+class DetectorResult:
+    detector: str
+    statistic: float
+    p_value: float | None
+    effect_size: float
+    drift_detected: bool
+    confidence: float
+    insufficient_sample: bool = False
+    n_baseline: int = 0
+    n_current: int = 0
+    detail: dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "detector": self.detector,
+            "statistic": self.statistic,
+            "p_value": self.p_value,
+            "effect_size": self.effect_size,
+            "drift_detected": self.drift_detected,
+            "confidence": self.confidence,
+            "insufficient_sample": self.insufficient_sample,
+            "n_baseline": self.n_baseline,
+            "n_current": self.n_current,
+            "detail": self.detail,
+        }
+
+
+def _insufficient(detector: str, n_baseline: int, n_current: int) -> DetectorResult:
+    return DetectorResult(
+        detector=detector,
+        statistic=0.0,
+        p_value=None,
+        effect_size=0.0,
+        drift_detected=False,
+        confidence=0.0,
+        insufficient_sample=True,
+        n_baseline=n_baseline,
+        n_current=n_current,
+        detail={"reason": f"fewer than {MIN_SAMPLE_SIZE} observations in baseline or current sample"},
+    )
+
+
+def ks_test(
+    baseline: Sequence[float], current: Sequence[float], alpha: float = 0.05
+) -> DetectorResult:
+    """Two-sample Kolmogorov-Smirnov test: are baseline and current drawn
+    from the same distribution? Distribution-shape-agnostic -- catches
+    shifts, spread changes, and multimodal changes a mean/variance
+    comparison would miss. effect_size is the KS statistic itself (max
+    CDF distance, in [0, 1])."""
+    if len(baseline) < MIN_SAMPLE_SIZE or len(current) < MIN_SAMPLE_SIZE:
+        return _insufficient("ks", len(baseline), len(current))
+    statistic, p_value = stats.ks_2samp(baseline, current)
+    return DetectorResult(
+        detector="ks",
+        statistic=float(statistic),
+        p_value=float(p_value),
+        effect_size=float(statistic),
+        drift_detected=bool(p_value < alpha),
+        confidence=max(0.0, min(1.0, 1.0 - p_value)),
+        n_baseline=len(baseline),
+        n_current=len(current),
+        detail={"alpha": alpha},
+    )
+
+
+def wasserstein_distance(
+    baseline: Sequence[float], current: Sequence[float], relative_threshold: float = 0.2
+) -> DetectorResult:
+    """Earth-mover's distance between the two samples, in the original
+    units of the signal (e.g. cosine distance, milliseconds). Unlike KS,
+    this has no p-value -- it directly measures how far the distributions
+    are apart, which KS's max-CDF-gap statistic can under-report for a
+    broad, gradual shift.
+
+    `drift_detected` fires when the distance exceeds `relative_threshold`
+    times the baseline's own spread (its interquartile range), so the
+    same relative_threshold means "the shift is big relative to how noisy
+    this signal normally is" whether the signal ranges over 0-1 or over
+    hundreds of milliseconds. confidence scales linearly with how far past
+    that threshold the distance falls, capped at 1.0 -- there is no p-value
+    to report one from, so it says "how far past the line", not
+    "how unlikely under a null".
+    """
+    if len(baseline) < MIN_SAMPLE_SIZE or len(current) < MIN_SAMPLE_SIZE:
+        return _insufficient("wasserstein", len(baseline), len(current))
+    distance = float(stats.wasserstein_distance(baseline, current))
+    q1, q3 = stats.scoreatpercentile(baseline, [25, 75])
+    iqr = max(float(q3) - float(q1), 1e-9)  # avoid dividing by zero on a degenerate (constant) baseline
+    ratio = distance / iqr
+    drift_detected = bool(ratio > relative_threshold)
+    confidence = max(0.0, min(1.0, ratio / (relative_threshold * 2)))
+    return DetectorResult(
+        detector="wasserstein",
+        statistic=distance,
+        p_value=None,
+        effect_size=distance,
+        drift_detected=drift_detected,
+        confidence=confidence,
+        n_baseline=len(baseline),
+        n_current=len(current),
+        detail={"baseline_iqr": iqr, "ratio_to_iqr": ratio, "relative_threshold": relative_threshold},
+    )
+
+
+def population_stability_index(
+    baseline: Sequence[float], current: Sequence[float], bins: int = 10
+) -> DetectorResult:
+    """PSI over `bins` quantile buckets of the baseline. Standard banding
+    (widely used in credit-risk model monitoring, not invented here):
+    PSI < 0.1 no significant shift, 0.1-0.25 moderate shift worth a look,
+    > 0.25 significant shift. confidence is that banding renormalized to
+    [0, 1] (0 at PSI=0, 1 at PSI>=0.25), not a p-value -- PSI is a fixed
+    divergence measure, not a hypothesis test.
+    """
+    if len(baseline) < MIN_SAMPLE_SIZE or len(current) < MIN_SAMPLE_SIZE:
+        return _insufficient("psi", len(baseline), len(current))
+
+    edges = sorted(set(stats.scoreatpercentile(baseline, list(_linspace(0, 100, bins + 1)))))
+    if len(edges) < 3:
+        # baseline has too little spread to form distinct bins (e.g. every
+        # value identical) -- PSI is undefined in any meaningful sense.
+        return DetectorResult(
+            detector="psi",
+            statistic=0.0,
+            p_value=None,
+            effect_size=0.0,
+            drift_detected=False,
+            confidence=0.0,
+            n_baseline=len(baseline),
+            n_current=len(current),
+            detail={"reason": "baseline has insufficient spread to bin"},
+        )
+
+    edges[0] = -float("inf")
+    edges[-1] = float("inf")
+
+    def _bucket_fractions(values: Sequence[float]) -> list[float]:
+        counts = [0] * (len(edges) - 1)
+        for v in values:
+            for i in range(len(edges) - 1):
+                if edges[i] < v <= edges[i + 1]:
+                    counts[i] += 1
+                    break
+        n = len(values)
+        # additive smoothing avoids a log(0) when a bucket is empty in one sample
+        return [(c + 0.5) / (n + 0.5 * len(counts)) for c in counts]
+
+    base_fracs = _bucket_fractions(baseline)
+    curr_fracs = _bucket_fractions(current)
+    psi = sum((c - b) * _safe_log(c / b) for b, c in zip(base_fracs, curr_fracs))
+
+    confidence = max(0.0, min(1.0, psi / 0.25))
+    return DetectorResult(
+        detector="psi",
+        statistic=psi,
+        p_value=None,
+        effect_size=psi,
+        drift_detected=psi >= 0.1,
+        confidence=confidence,
+        n_baseline=len(baseline),
+        n_current=len(current),
+        detail={"bins": len(edges) - 1, "band": _psi_band(psi)},
+    )
+
+
+def two_proportion_ztest(
+    baseline_successes: int,
+    baseline_n: int,
+    current_successes: int,
+    current_n: int,
+    alpha: float = 0.05,
+) -> DetectorResult:
+    """Two-proportion z-test: has a rate (refusal rate, citation-validity
+    rate, ...) changed between baseline and current? This replaces a bare
+    "delta > tolerance" check with a test that accounts for sample size --
+    the same 10-point rate jump is much less surprising on 10 events than
+    on 1000, and a fixed tolerance can't tell the difference.
+    """
+    if baseline_n < MIN_SAMPLE_SIZE or current_n < MIN_SAMPLE_SIZE:
+        return _insufficient("two_proportion_ztest", baseline_n, current_n)
+
+    p_base = baseline_successes / baseline_n
+    p_curr = current_successes / current_n
+    p_pool = (baseline_successes + current_successes) / (baseline_n + current_n)
+    se = (p_pool * (1 - p_pool) * (1 / baseline_n + 1 / current_n)) ** 0.5
+
+    if se == 0:
+        # both samples are 100% (or 0%) successes -- no variance to test
+        return DetectorResult(
+            detector="two_proportion_ztest",
+            statistic=0.0,
+            p_value=1.0,
+            effect_size=abs(p_curr - p_base),
+            drift_detected=False,
+            confidence=0.0,
+            n_baseline=baseline_n,
+            n_current=current_n,
+            detail={"baseline_rate": p_base, "current_rate": p_curr},
+        )
+
+    z = (p_curr - p_base) / se
+    p_value = float(2 * (1 - stats.norm.cdf(abs(z))))
+    return DetectorResult(
+        detector="two_proportion_ztest",
+        statistic=float(z),
+        p_value=p_value,
+        effect_size=abs(p_curr - p_base),
+        drift_detected=bool(p_value < alpha),
+        confidence=max(0.0, min(1.0, 1.0 - p_value)),
+        n_baseline=baseline_n,
+        n_current=current_n,
+        detail={"baseline_rate": p_base, "current_rate": p_curr, "alpha": alpha},
+    )
+
+
+def _linspace(start: float, stop: float, n: int) -> list[float]:
+    if n == 1:
+        return [start]
+    step = (stop - start) / (n - 1)
+    return [start + i * step for i in range(n)]
+
+
+def _safe_log(x: float) -> float:
+    import math
+
+    return math.log(x) if x > 0 else 0.0
+
+
+def _psi_band(psi: float) -> str:
+    if psi < 0.1:
+        return "no significant shift"
+    if psi < 0.25:
+        return "moderate shift"
+    return "significant shift"

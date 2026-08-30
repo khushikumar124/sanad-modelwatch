@@ -17,6 +17,10 @@ class RegisterModelRequest(BaseModel):
     name: str
     adapter_name: str
     baseline_data: Any
+    #: optional registry record -- embedding model, chunk size, top-k,
+    #: prompt version, dataset version, whatever describes this model's
+    #: configuration at registration time. Opaque to the API/engine.
+    config: dict[str, Any] = {}
 
 
 class CheckRequest(BaseModel):
@@ -37,11 +41,50 @@ class SignalResponse(BaseModel):
 class CheckResponse(BaseModel):
     run_id: int
     alert_id: int | None
+    health_state: str
     drift_score: float
     quality_score: float | None
     is_drifted: bool
     signals: list[SignalResponse]
     statistics: dict[str, Any] = {}
+
+
+class HealthResponse(BaseModel):
+    model_id: str
+    state: str
+    consecutive_drifted: int
+    consecutive_clean: int
+    updated_at: str | None
+
+
+class RankedSubsystem(BaseModel):
+    subsystem: str
+    score: float
+
+
+class DiagnosisResponse(BaseModel):
+    likely_subsystem: str | None
+    confidence: float
+    reasoning: list[str]
+    ranked: list[RankedSubsystem]
+
+
+class RecordExperimentRequest(BaseModel):
+    name: str
+    kind: str
+    config: dict[str, Any] = {}
+    results: dict[str, Any] = {}
+    status: str = "completed"
+
+
+class ExperimentResponse(BaseModel):
+    id: int
+    name: str
+    kind: str
+    created_at: str
+    config: dict[str, Any]
+    results: dict[str, Any]
+    status: str
 
 
 class ModelResponse(BaseModel):
@@ -50,6 +93,7 @@ class ModelResponse(BaseModel):
     adapter_name: str
     current_version: int
     created_at: str
+    config: dict[str, Any] = {}
 
 
 class RunResponse(BaseModel):

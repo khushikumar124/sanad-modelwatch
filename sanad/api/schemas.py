@@ -53,6 +53,14 @@ class RiskResponse(BaseModel):
     counts: dict[str, int]
 
 
+class ComparisonResponse(BaseModel):
+    counts_a: dict[str, int]
+    counts_b: dict[str, int]
+    only_in_a: list[dict[str, Any]]
+    only_in_b: list[dict[str, Any]]
+    shared: list[dict[str, Any]]
+
+
 class ChatResponse(BaseModel):
     answer: str
     grounded: bool

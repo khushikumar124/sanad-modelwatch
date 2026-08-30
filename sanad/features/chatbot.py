@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import time
 from dataclasses import dataclass, field
 
 from sanad.config import config
@@ -60,6 +61,12 @@ class ChatAnswer:
     retrieved_chunks: list[dict] = field(default_factory=list)
     raw_llm_output: str = ""
     parse_error: bool = False
+    #: how many excerpt numbers the model named in cited_excerpts before
+    #: filtering to ones that actually exist -- lets a caller compute a
+    #: citation-validity ratio (valid / requested) instead of only a count.
+    citations_requested: int = 0
+    retrieval_latency_ms: float = 0.0
+    generation_latency_ms: float = 0.0
 
     def to_dict(self) -> dict:
         return {
@@ -101,6 +108,7 @@ def _parse_answer(raw: str, hits: list[dict]) -> ChatAnswer:
     model_says_grounded = bool(data.get("grounded", False))
     answer = str(data.get("answer", ""))
     cited_indices = data.get("cited_excerpts") or []
+    citations_requested = len(cited_indices)
 
     cited_chunks = [
         hits[i - 1]
@@ -124,6 +132,7 @@ def _parse_answer(raw: str, hits: list[dict]) -> ChatAnswer:
             retrieved_chunks=hits,
             raw_llm_output=raw,
             parse_error=False,
+            citations_requested=citations_requested,
         )
     if cited_chunks and not model_says_grounded:
         logger.info("model cited excerpts but set grounded=false; trusting the citations")
@@ -135,6 +144,7 @@ def _parse_answer(raw: str, hits: list[dict]) -> ChatAnswer:
         retrieved_chunks=hits,
         raw_llm_output=raw,
         parse_error=False,
+        citations_requested=citations_requested,
     )
 
 
@@ -145,14 +155,26 @@ def ask(
     llm_client: LLMClient,
     top_k: int | None = None,
 ) -> ChatAnswer:
+    retrieval_started = time.perf_counter()
     hits = vector_store.query(doc_id, question, top_k=top_k or config.retrieval_top_k)
+    retrieval_latency_ms = (time.perf_counter() - retrieval_started) * 1000
     if not hits:
-        return ChatAnswer(answer=NO_CONTEXT_ANSWER, grounded=False, retrieved_chunks=[])
+        return ChatAnswer(
+            answer=NO_CONTEXT_ANSWER,
+            grounded=False,
+            retrieved_chunks=[],
+            retrieval_latency_ms=retrieval_latency_ms,
+        )
 
     user_prompt = _build_user_prompt(hits, question)
+    generation_started = time.perf_counter()
     raw = llm_client.generate(
         system_prompt=CHATBOT_SYSTEM_PROMPT,
         user_prompt=user_prompt,
         response_schema=ANSWER_SCHEMA,
     )
-    return _parse_answer(raw, hits)
+    generation_latency_ms = (time.perf_counter() - generation_started) * 1000
+    result = _parse_answer(raw, hits)
+    result.retrieval_latency_ms = retrieval_latency_ms
+    result.generation_latency_ms = generation_latency_ms
+    return result

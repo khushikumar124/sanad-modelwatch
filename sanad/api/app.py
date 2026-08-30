@@ -30,6 +30,7 @@ from sanad.api import telemetry
 from sanad.api.schemas import (
     ChatRequest,
     ChatResponse,
+    ComparisonResponse,
     DocumentResponse,
     LoginRequest,
     RiskResponse,
@@ -40,6 +41,7 @@ from sanad.api.schemas import (
 )
 from sanad.config import config
 from sanad.features.chatbot import ask
+from sanad.features.comparison import compare_risk_reports
 from sanad.features.risk_flagger import flag_risks
 from sanad.features.summarizer import summarize
 from sanad.ingestion.chunking import chunk_document
@@ -276,6 +278,21 @@ def get_risks(doc_id: str, _user: str | None = Depends(require_user)):
     return flag_risks(chunk_document(record.text)).to_dict()
 
 
+@app.get("/api/documents/{doc_id}/compare/{other_doc_id}", response_model=ComparisonResponse)
+def compare_documents(
+    doc_id: str, other_doc_id: str, _user: str | None = Depends(require_user)
+):
+    """Side-by-side risk comparison of two contracts, rule by rule. Reuses
+    the same rule-based risk scan get_risks() runs -- comparison is just
+    a set operation over which rules fired in each, so it's deterministic
+    and instant, same as the single-document scan."""
+    record_a = _get_record(doc_id)
+    record_b = _get_record(other_doc_id)
+    report_a = flag_risks(chunk_document(record_a.text))
+    report_b = flag_risks(chunk_document(record_b.text))
+    return compare_risk_reports(report_a, report_b).to_dict()
+
+
 @app.post("/api/documents/{doc_id}/chat", response_model=ChatResponse)
 def chat_with_document(
     doc_id: str, req: ChatRequest, _user: str | None = Depends(require_user)
@@ -293,6 +310,13 @@ def chat_with_document(
         latency_ms=(time.perf_counter() - started) * 1000,
         parse_error=result.parse_error,
         retrieved=len(result.retrieved_chunks),
+        doc_id=doc_id,
+        model_name=config.ollama_model,
+        top_k=config.retrieval_top_k,
+        retrieval_scores=[c["distance"] for c in result.retrieved_chunks],
+        retrieval_latency_ms=result.retrieval_latency_ms,
+        generation_latency_ms=result.generation_latency_ms,
+        citations_requested=result.citations_requested,
     )
     return result.to_dict()
 

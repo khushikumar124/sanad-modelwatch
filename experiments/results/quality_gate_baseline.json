@@ -1,0 +1,76 @@
+{
+  "model": "phi3:3.8b",
+  "summary": {
+    "n_cases": 22,
+    "retrieval_hit_rate": 0.9545454545454546,
+    "citation_correctness": 0.8235294117647058,
+    "refusal_rate": 0.22727272727272727,
+    "parse_error_rate": 0.0,
+    "mean_semantic_similarity": 0.6675051058975917,
+    "latency_p95_ms": 7481.811999998172,
+    "retrieval_latency_p95_ms": 76.7339579979307,
+    "generation_latency_p95_ms": 7461.43375000247,
+    "by_category": {
+      "compensation": {
+        "n_cases": 3,
+        "retrieval_hit_rate": 0.6666666666666666,
+        "mean_semantic_similarity": 0.7134824485019907
+      },
+      "security_deposit": {
+        "n_cases": 2,
+        "retrieval_hit_rate": 1.0,
+        "mean_semantic_similarity": 0.7270355944279516
+      },
+      "notice_period": {
+        "n_cases": 3,
+        "retrieval_hit_rate": 1.0,
+        "mean_semantic_similarity": 0.8443121838416556
+      },
+      "obligations": {
+        "n_cases": 1,
+        "retrieval_hit_rate": 1.0,
+        "mean_semantic_similarity": 0.7125668569666518
+      },
+      "termination": {
+        "n_cases": 2,
+        "retrieval_hit_rate": 1.0,
+        "mean_semantic_similarity": 0.8174153369584494
+      },
+      "duration": {
+        "n_cases": 1,
+        "retrieval_hit_rate": 1.0,
+        "mean_semantic_similarity": 0.9907112895152721
+      },
+      "intellectual_property": {
+        "n_cases": 1,
+        "retrieval_hit_rate": 1.0,
+        "mean_semantic_similarity": 0.5045485250272179
+      },
+      "employment_status": {
+        "n_cases": 3,
+        "retrieval_hit_rate": 1.0,
+        "mean_semantic_similarity": 0.48172074093311124
+      },
+      "working_restrictions": {
+        "n_cases": 1,
+        "retrieval_hit_rate": 1.0,
+        "mean_semantic_similarity": 0.6431897884315262
+      },
+      "governing_law": {
+        "n_cases": 1,
+        "retrieval_hit_rate": 1.0,
+        "mean_semantic_similarity": 0.7535585516678801
+      },
+      "dispute_resolution": {
+        "n_cases": 1,
+        "retrieval_hit_rate": 1.0,
+        "mean_semantic_similarity": 0.7924071159149524
+      },
+      "probation": {
+        "n_cases": 3,
+        "retrieval_hit_rate": 1.0,
+        "mean_semantic_similarity": 0.3602274065401476
+      }
+    }
+  }
+}

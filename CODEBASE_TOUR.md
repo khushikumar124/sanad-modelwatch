@@ -107,6 +107,41 @@ answers rendered as refusals.
 - **`modelwatch/examples/simulate_drift_demo.py`** — baseline → swap model
   → alert → retrain → recover
 
+### 5. The research extension (10 min, if you have it)
+
+Built on top of everything above, without changing any of it:
+
+- **`sanad/api/telemetry.py`** — the event schema grew richer (retrieval
+  distances, split retrieval/generation latency, citation-validity
+  counts), still with zero question/answer/chunk text. See
+  `docs/telemetry.md`.
+- **`modelwatch/drift/detectors.py`** — real KS/Wasserstein/PSI/
+  two-proportion-z-test functions, decoupled from any adapter.
+- **`modelwatch/adapters/rag_adapter.py`** — a fourth adapter
+  (`adapter_name="rag"`) that runs those tests against the richer
+  telemetry: four independent signals (retrieval, generation latency,
+  refusal, citation validity), never collapsed into one number.
+  `live_telemetry` still works unchanged for anything already registered
+  against it.
+- **`modelwatch/core/health.py`** — alert hysteresis
+  (healthy→warning→degraded→recovering→healthy), defaulted to reproduce
+  the original one-shot alerting exactly.
+- **`modelwatch/diagnosis/engine.py`** — given a drifted run's signals,
+  ranks which subsystem (retrieval/generation/operational) is the likely
+  cause, with a documented (not black-box) scoring rule. Shows up in the
+  dashboard as "Why this alert?".
+- **`modelwatch/experiments/drift_lab.py`** and **`benchmark.py`** — real
+  controlled interventions on Sanad's live pipeline, and a real
+  comparison of detection methods on synthetic trials with known ground
+  truth. See `docs/experiments.md` for actual measured numbers from both.
+- **`sanad/evaluation/`** — a 22-case RAG evaluation dataset and a
+  deterministic + embedding-based scoring engine, feeding
+  `scripts/quality_gate.py` (a real CI-style regression gate).
+
+Full writeup, including what's been measured and what hasn't (detection
+delay and hysteresis-adjusted false-positive rate are open), in
+**`docs/research.md`**.
+
 ## Questions you should be ready for
 
 **"Why is the chatbot wrong so often?"**

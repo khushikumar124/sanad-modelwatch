@@ -66,6 +66,24 @@ class Config:
     telemetry_latency_multiplier: float = _float_env("MODELWATCH_TELEMETRY_LATENCY_MULTIPLIER", 2.5)
     telemetry_min_events: int = _int_env("MODELWATCH_TELEMETRY_MIN_EVENTS", 5)
 
+    # RAGAdapter: significance level for its statistical detectors (KS,
+    # two-proportion z-test), and the minimum events required in both the
+    # baseline and current batch before any of them run at all -- below
+    # this, a distributional test's p-value looks precise but isn't.
+    rag_alpha: float = _float_env("MODELWATCH_RAG_ALPHA", 0.05)
+    rag_min_events: int = _int_env("MODELWATCH_RAG_MIN_EVENTS", 8)
+
+    # Alert hysteresis (modelwatch/core/health.py). Defaults reproduce the
+    # original "alert on the very first drifted check, clear on the very
+    # first clean one" behavior -- raise degraded_after_consecutive (and
+    # optionally recovery_after_consecutive) to require sustained drift
+    # before paging, which is the recommended production setting once a
+    # model has enough traffic for a couple of consecutive batches to mean
+    # something.
+    health_warning_after_consecutive: int = _int_env("MODELWATCH_WARNING_AFTER_CONSECUTIVE", 1)
+    health_degraded_after_consecutive: int = _int_env("MODELWATCH_DEGRADED_AFTER_CONSECUTIVE", 1)
+    health_recovery_after_consecutive: int = _int_env("MODELWATCH_RECOVERY_AFTER_CONSECUTIVE", 1)
+
     # Default logging level for library/service code.
     log_level: str = os.environ.get("MODELWATCH_LOG_LEVEL", "INFO")
 

@@ -76,6 +76,22 @@ def collect_actual_answers(
     return results
 
 
+def _sanad_config_snapshot() -> dict:
+    """Real config values read from Sanad's own settings, not guessed --
+    this is what Phase C's model registry `config` field is for: a record
+    of what the model actually was at registration time."""
+    from sanad.config import config as sanad_config
+
+    return {
+        "embedding_model": sanad_config.embedding_model,
+        "chunk_max_chars": sanad_config.chunk_max_chars,
+        "chunk_min_chars": sanad_config.chunk_min_chars,
+        "retrieval_top_k": sanad_config.retrieval_top_k,
+        "ollama_model": sanad_config.ollama_model,
+        "dataset_version": "golden_set_v1",
+    }
+
+
 def ensure_model_registered(session: requests.Session, modelwatch_url: str, golden_set: list[GoldenPair]) -> None:
     res = session.get(f"{modelwatch_url}/models/{MODEL_ID}")
     if res.status_code == 200:
@@ -87,6 +103,7 @@ def ensure_model_registered(session: requests.Session, modelwatch_url: str, gold
             "name": MODEL_NAME,
             "adapter_name": "llm",
             "baseline_data": to_baseline_data(golden_set),
+            "config": _sanad_config_snapshot(),
         },
     )
     res.raise_for_status()

@@ -8,16 +8,26 @@ way -- Sanad runs perfectly well with nothing watching it, and swapping
 the monitoring system out touches nothing in this app.
 
 Only operational facts are stored: whether the answer was grounded, how
-many clauses it cited, how long it took. No question text, no answer
-text, no document identifiers. Contracts are confidential, and a
-monitoring buffer is not a place to put their contents.
+many clauses it cited, how long it took, and (as of this schema) which
+retrieval/generation stage that time went to and how similar the
+retrieved chunks were to the query. No question text, no answer text, no
+chunk text. doc_id is kept because it is already an opaque identifier
+Sanad assigns on upload, not contract content -- it lets a reader ask
+"is this drift concentrated on one document?" without exposing what the
+document says. Contracts are confidential, and a monitoring buffer is
+not a place to put their contents.
+
+The five original fields (grounded, citations, latency_ms, parse_error,
+retrieved) are kept exactly as they were: `LiveTelemetryAdapter` reads
+them by name, and this stays a superset rather than a breaking change.
 """
 from __future__ import annotations
 
 import logging
 import threading
+import uuid
 from collections import deque
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 
@@ -38,13 +48,40 @@ class ChatEvent:
     parse_error: bool
     retrieved: int
 
+    # -- richer, additive fields (defaulted so old call sites still work) --
+    trace_id: str = ""
+    doc_id: str = ""
+    model_name: str = ""
+    top_k: int = 0
+    #: cosine distances of retrieved chunks (lower = more similar), never
+    #: chunk text -- lets a reader see retrieval quality degrade without
+    #: exposing what was retrieved.
+    retrieval_scores: list[float] = field(default_factory=list)
+    retrieval_latency_ms: float = 0.0
+    generation_latency_ms: float = 0.0
+    #: how many excerpt numbers the model named before filtering to valid
+    #: ones; citations / citations_requested is a citation-validity ratio.
+    citations_requested: int = 0
+
 
 _events: deque[ChatEvent] = deque(maxlen=_MAX_EVENTS)
 _lock = threading.Lock()
 
 
 def record_chat(
-    *, grounded: bool, citations: int, latency_ms: float, parse_error: bool, retrieved: int
+    *,
+    grounded: bool,
+    citations: int,
+    latency_ms: float,
+    parse_error: bool,
+    retrieved: int,
+    doc_id: str = "",
+    model_name: str = "",
+    top_k: int = 0,
+    retrieval_scores: list[float] | None = None,
+    retrieval_latency_ms: float = 0.0,
+    generation_latency_ms: float = 0.0,
+    citations_requested: int = 0,
 ) -> None:
     with _lock:
         _events.append(
@@ -55,6 +92,14 @@ def record_chat(
                 latency_ms=round(latency_ms, 1),
                 parse_error=parse_error,
                 retrieved=retrieved,
+                trace_id=uuid.uuid4().hex,
+                doc_id=doc_id,
+                model_name=model_name,
+                top_k=top_k,
+                retrieval_scores=[round(float(s), 4) for s in (retrieval_scores or [])],
+                retrieval_latency_ms=round(retrieval_latency_ms, 1),
+                generation_latency_ms=round(generation_latency_ms, 1),
+                citations_requested=citations_requested,
             )
         )
 

@@ -9,6 +9,10 @@
 set -u
 cd "$(dirname "$0")"
 
+# Local overrides (auth, session secret, etc.) persisted across shells --
+# see .env's own comment. Gitignored; safe to be absent.
+[ -f .env ] && source .env
+
 SANAD_PORT=${SANAD_API_PORT:-8100}
 MW_PORT=${MODELWATCH_API_PORT:-8000}
 
@@ -59,8 +63,15 @@ done
 nohup python -u -m modelwatch.examples.telemetry_reporter --interval 15 --min-batch 5 \
   > /tmp/telemetry_reporter.log 2>&1 &
 
-MODEL=$(curl -s --max-time 5 "http://localhost:$SANAD_PORT/api/admin/model" 2>/dev/null | sed 's/.*"model":"\([^"]*\)".*/\1/')
 AUTH=$(curl -s --max-time 5 "http://localhost:$SANAD_PORT/api/auth/session" 2>/dev/null | grep -c '"auth_enabled":true')
+if [ "${AUTH:-0}" = "1" ]; then
+  # /api/admin/model is behind require_user, so it 401s with no session
+  # cookie -- read the configured default straight from Sanad's own
+  # config instead of hitting a protected endpoint.
+  MODEL=$(python -c "from sanad.config import config; print(config.ollama_model)" 2>/dev/null)
+else
+  MODEL=$(curl -s --max-time 5 "http://localhost:$SANAD_PORT/api/admin/model" 2>/dev/null | sed 's/.*"model":"\([^"]*\)".*/\1/')
+fi
 HAVE=$(ollama list 2>/dev/null | awk 'NR>1{print $1}' | tr '\n' ' ')
 
 echo

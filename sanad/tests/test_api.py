@@ -90,6 +90,41 @@ def test_chat_unknown_document_returns_404():
     assert res.status_code == 404
 
 
+def test_risks_endpoint_returns_a_report(uploaded_doc_id):
+    res = client.get(f"/api/documents/{uploaded_doc_id}/risks")
+    assert res.status_code == 200
+    body = res.json()
+    assert "findings" in body and "counts" in body and "clauses_scanned" in body
+
+
+FREELANCE_DOC = "sanad/sample_docs/freelance/freelance_agreement_sample2.pdf"
+
+
+@pytest.fixture(scope="module")
+def second_doc_id():
+    with open(FREELANCE_DOC, "rb") as f:
+        res = client.post(
+            "/api/documents",
+            files={"file": ("freelance.pdf", f, "application/pdf")},
+            data={"contract_type": "freelance"},
+        )
+    assert res.status_code == 201
+    return res.json()["doc_id"]
+
+
+def test_compare_endpoint_returns_a_comparison(uploaded_doc_id, second_doc_id):
+    res = client.get(f"/api/documents/{uploaded_doc_id}/compare/{second_doc_id}")
+    assert res.status_code == 200
+    body = res.json()
+    for key in ("counts_a", "counts_b", "only_in_a", "only_in_b", "shared"):
+        assert key in body
+
+
+def test_compare_with_unknown_document_returns_404(uploaded_doc_id):
+    res = client.get(f"/api/documents/{uploaded_doc_id}/compare/does-not-exist")
+    assert res.status_code == 404
+
+
 @pytest.fixture
 def llm_unreachable():
     """Point the app's LLM client at a port with no listener.

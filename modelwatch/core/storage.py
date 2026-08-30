@@ -23,7 +23,8 @@ CREATE TABLE IF NOT EXISTS models (
     name TEXT NOT NULL,
     adapter_name TEXT NOT NULL,
     current_version INTEGER NOT NULL DEFAULT 1,
-    created_at TEXT NOT NULL
+    created_at TEXT NOT NULL,
+    config_json TEXT NOT NULL DEFAULT '{}'
 );
 
 CREATE TABLE IF NOT EXISTS baselines (
@@ -62,6 +63,33 @@ CREATE TABLE IF NOT EXISTS versions (
     version INTEGER NOT NULL,
     created_at TEXT NOT NULL,
     reason TEXT NOT NULL
+);
+
+-- One row per model: the alert-hysteresis state machine (see
+-- modelwatch/core/health.py). consecutive_drifted/consecutive_clean count
+-- consecutive check_drift() runs, reset to 0 on the opposite outcome, so a
+-- single unlucky (or lucky) batch can't flip the health state on its own.
+CREATE TABLE IF NOT EXISTS model_health (
+    model_id TEXT PRIMARY KEY REFERENCES models(model_id),
+    state TEXT NOT NULL DEFAULT 'healthy',
+    consecutive_drifted INTEGER NOT NULL DEFAULT 0,
+    consecutive_clean INTEGER NOT NULL DEFAULT 0,
+    updated_at TEXT NOT NULL
+);
+
+-- One row per experiment/benchmark run (Drift Lab scenario, benchmark
+-- comparison, ablation study, ...). Free-form config/results JSON, like
+-- baselines -- storage doesn't interpret them, just persists and lists
+-- them so a later reader (or scripts/run_benchmark.py re-running with
+-- the same config) has a record of what was actually run and measured.
+CREATE TABLE IF NOT EXISTS experiments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    config_json TEXT NOT NULL DEFAULT '{}',
+    results_json TEXT NOT NULL DEFAULT '{}',
+    status TEXT NOT NULL DEFAULT 'completed'
 );
 
 CREATE INDEX IF NOT EXISTS idx_runs_model ON runs(model_id, timestamp);
@@ -107,6 +135,10 @@ class Storage:
             if "statistics_json" not in existing:
                 cur.execute("ALTER TABLE runs ADD COLUMN statistics_json TEXT NOT NULL DEFAULT '{}'")
 
+            existing_models = {row[1] for row in cur.execute("PRAGMA table_info(models)")}
+            if "config_json" not in existing_models:
+                cur.execute("ALTER TABLE models ADD COLUMN config_json TEXT NOT NULL DEFAULT '{}'")
+
     @contextmanager
     def _cursor(self) -> Iterator[sqlite3.Cursor]:
         with self._lock:
@@ -125,16 +157,25 @@ class Storage:
 
     # -- models ---------------------------------------------------------
 
-    def create_model(self, model_id: str, name: str, adapter_name: str) -> dict[str, Any]:
+    def create_model(
+        self, model_id: str, name: str, adapter_name: str, config: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
+        """config is a free-form registry record of what this model *is*
+        at the time of registration -- e.g. for a RAG model: embedding
+        model, chunk size, top-k, prompt version, dataset version. It is
+        opaque to storage (like a baseline's data_json) but, unlike a
+        baseline, it describes the model's configuration rather than a
+        statistical snapshot, and is meant to be read by a human comparing
+        two registrations, not by an adapter."""
         with self._cursor() as cur:
             cur.execute("SELECT 1 FROM models WHERE model_id = ?", (model_id,))
             if cur.fetchone() is not None:
                 raise ModelAlreadyExistsError(f"model '{model_id}' already registered")
             created_at = _now()
             cur.execute(
-                "INSERT INTO models (model_id, name, adapter_name, current_version, created_at)"
-                " VALUES (?, ?, ?, 1, ?)",
-                (model_id, name, adapter_name, created_at),
+                "INSERT INTO models (model_id, name, adapter_name, current_version, created_at, config_json)"
+                " VALUES (?, ?, ?, 1, ?, ?)",
+                (model_id, name, adapter_name, created_at, json.dumps(config or {})),
             )
         logger.info("model registered", extra={"model_id": model_id, "adapter_name": adapter_name})
         return self.get_model(model_id)
@@ -143,12 +184,21 @@ class Storage:
         with self._cursor() as cur:
             cur.execute("SELECT * FROM models WHERE model_id = ?", (model_id,))
             row = cur.fetchone()
-            return dict(row) if row else None
+            if row is None:
+                return None
+            d = dict(row)
+            d["config"] = json.loads(d.pop("config_json", None) or "{}")
+            return d
 
     def list_models(self) -> list[dict[str, Any]]:
         with self._cursor() as cur:
             cur.execute("SELECT * FROM models ORDER BY created_at")
-            return [dict(row) for row in cur.fetchall()]
+            rows = []
+            for row in cur.fetchall():
+                d = dict(row)
+                d["config"] = json.loads(d.pop("config_json", None) or "{}")
+                rows.append(d)
+            return rows
 
     def set_current_version(self, model_id: str, version: int) -> None:
         with self._cursor() as cur:
@@ -290,3 +340,86 @@ class Storage:
                 "SELECT * FROM versions WHERE model_id = ? ORDER BY version", (model_id,)
             )
             return [dict(row) for row in cur.fetchall()]
+
+    # -- health state (alert hysteresis) -------------------------------------
+
+    def get_health(self, model_id: str) -> dict[str, Any]:
+        """Never returns None. A model with no health row yet is
+        healthy with a clean streak of zero -- UNLESS it already has an
+        unresolved alert (a model registered before the model_health
+        table existed, upgraded in place): then it starts as degraded,
+        so the health state and the alert it's already carrying agree
+        with each other instead of showing "healthy" next to an open
+        incident."""
+        with self._cursor() as cur:
+            cur.execute("SELECT * FROM model_health WHERE model_id = ?", (model_id,))
+            row = cur.fetchone()
+            if row is not None:
+                return dict(row)
+
+        # self._cursor() holds a non-reentrant lock -- get_alerts() below
+        # must run after that `with` block has exited, not inside it.
+        has_open_alert = self.get_alerts(model_id=model_id, active_only=True) != []
+        return {
+            "model_id": model_id,
+            "state": "degraded" if has_open_alert else "healthy",
+            "consecutive_drifted": 1 if has_open_alert else 0,
+            "consecutive_clean": 0,
+            "updated_at": None,
+        }
+
+    # -- experiments ------------------------------------------------------
+
+    def create_experiment(
+        self, name: str, kind: str, config: dict[str, Any], results: dict[str, Any], status: str = "completed"
+    ) -> int:
+        with self._cursor() as cur:
+            cur.execute(
+                "INSERT INTO experiments (name, kind, created_at, config_json, results_json, status)"
+                " VALUES (?, ?, ?, ?, ?, ?)",
+                (name, kind, _now(), json.dumps(config), json.dumps(results), status),
+            )
+            return cur.lastrowid
+
+    def get_experiment(self, experiment_id: int) -> dict[str, Any] | None:
+        with self._cursor() as cur:
+            cur.execute("SELECT * FROM experiments WHERE id = ?", (experiment_id,))
+            row = cur.fetchone()
+            if row is None:
+                return None
+            d = dict(row)
+            d["config"] = json.loads(d.pop("config_json"))
+            d["results"] = json.loads(d.pop("results_json"))
+            return d
+
+    def list_experiments(self, kind: str | None = None) -> list[dict[str, Any]]:
+        query = "SELECT * FROM experiments"
+        params: list[Any] = []
+        if kind is not None:
+            query += " WHERE kind = ?"
+            params.append(kind)
+        query += " ORDER BY created_at DESC"
+        with self._cursor() as cur:
+            cur.execute(query, params)
+            rows = []
+            for row in cur.fetchall():
+                d = dict(row)
+                d["config"] = json.loads(d.pop("config_json"))
+                d["results"] = json.loads(d.pop("results_json"))
+                rows.append(d)
+            return rows
+
+    def set_health(
+        self, model_id: str, state: str, consecutive_drifted: int, consecutive_clean: int
+    ) -> None:
+        with self._cursor() as cur:
+            cur.execute(
+                "INSERT INTO model_health (model_id, state, consecutive_drifted, consecutive_clean, updated_at)"
+                " VALUES (?, ?, ?, ?, ?)"
+                " ON CONFLICT(model_id) DO UPDATE SET"
+                " state = excluded.state,"
+                " consecutive_drifted = excluded.consecutive_drifted,"
+                " consecutive_clean = excluded.consecutive_clean,"
+                " updated_at = excluded.updated_at",
+                (model_id, state, consecutive_drifted, consecutive_clean, _now()),
+            )

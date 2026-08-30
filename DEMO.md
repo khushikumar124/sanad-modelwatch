@@ -136,6 +136,37 @@ The prof will probe. These are measured, not hedges:
   than a wrong answer reusing the same words.
 - **No multi-turn chat**, in-memory document registry, no auth.
 
+## 5. If there's real time left: the research extension
+
+Everything above still applies unchanged. This is additional depth
+built on top of it — see `docs/` for the full writeup.
+
+```bash
+# real statistical drift detection (KS, Wasserstein, two-proportion
+# z-test) over Sanad's structured per-request telemetry, plus root-cause
+# diagnosis, replacing step 3's threshold-only classifier demo:
+curl -s http://localhost:8000/models/sanad-live/health   # HEALTHY/WARNING/DEGRADED/RECOVERING
+
+# controlled intervention on Sanad's real pipeline (needs Ollama):
+python -m modelwatch.experiments.run_drift_lab retrieval_narrowing --limit 10
+
+# does multidimensional monitoring actually catch more than a single
+# threshold? (synthetic trials, real measured numbers, see docs/experiments.md)
+python scripts/run_benchmark.py --n-trials 300
+python scripts/run_benchmark.py --ablation --n-trials 300
+
+# CI-style regression gate against a real evaluation dataset:
+python scripts/quality_gate.py --save-baseline   # once
+python scripts/quality_gate.py                   # every run after
+```
+
+Say plainly what this is and isn't: the benchmark/ablation numbers are
+from **synthetic trials with known ground truth**, not live traffic —
+see `docs/research.md`'s limitations section, which also lists what
+hasn't been measured yet (detection delay, hysteresis-adjusted false
+positive rate). That honesty is itself part of the answer if asked "is
+this rigorous" — the repo says clearly what has and hasn't been shown.
+
 ## If something breaks
 
 - Sanad 500 on upload → restart the Sanad process.

@@ -10,8 +10,15 @@ from __future__ import annotations
 import logging
 from typing import Any, Callable
 
+from modelwatch.config import config
 from modelwatch.core.adapter_base import ModelAdapter
+from modelwatch.core.health import next_health_state
 from modelwatch.core.storage import ModelNotFoundError, Storage
+from modelwatch.diagnosis.engine import DiagnosisResult, diagnose
+
+
+class RunNotFoundError(Exception):
+    pass
 
 logger = logging.getLogger(__name__)
 
@@ -35,9 +42,18 @@ class MonitoringEngine:
         name: str,
         adapter: ModelAdapter,
         baseline_data: Any,
+        config: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        """Register a new monitored model and build its initial baseline."""
-        model = self._storage.create_model(model_id, name, adapter.adapter_name)
+        """Register a new monitored model and build its initial baseline.
+
+        config is an optional registry record (embedding model, chunk
+        size, top-k, prompt version, dataset version, ...) describing
+        what this model *is* -- purely informational to the engine, which
+        never reads it back, but persisted so a later reader can answer
+        "what changed between this registration and the last one" without
+        needing to remember it out-of-band.
+        """
+        model = self._storage.create_model(model_id, name, adapter.adapter_name, config=config)
         self._adapters[model_id] = adapter
 
         baseline = adapter.build_baseline(baseline_data)
@@ -90,8 +106,22 @@ class MonitoringEngine:
             statistics=result.statistics,
         )
 
+        health = self._storage.get_health(model_id)
+        transition = next_health_state(
+            current_state=health["state"],
+            is_drifted=result.is_drifted,
+            consecutive_drifted=health["consecutive_drifted"],
+            consecutive_clean=health["consecutive_clean"],
+            warning_after_consecutive=config.health_warning_after_consecutive,
+            degraded_after_consecutive=config.health_degraded_after_consecutive,
+            recovery_after_consecutive=config.health_recovery_after_consecutive,
+        )
+        self._storage.set_health(
+            model_id, transition.state, transition.consecutive_drifted, transition.consecutive_clean
+        )
+
         alert_id = None
-        if result.is_drifted:
+        if transition.should_create_alert:
             message = (
                 f"Drift detected for model '{model_id}' (v{model['current_version']}): "
                 f"drift_score={result.drift_score:.3f}"
@@ -103,8 +133,20 @@ class MonitoringEngine:
             )
             alert_id = self._storage.create_alert(model_id, run_id, message)
             logger.warning("drift alert raised", extra={"model_id": model_id, "run_id": run_id})
+        elif transition.should_resolve_alerts:
+            resolved = self._storage.resolve_alerts_for_model(model_id)
+            if resolved:
+                logger.info(
+                    "model health recovered, alerts resolved",
+                    extra={"model_id": model_id, "alerts_resolved": resolved},
+                )
 
-        return {"run_id": run_id, "alert_id": alert_id, **result.to_dict()}
+        return {
+            "run_id": run_id,
+            "alert_id": alert_id,
+            "health_state": transition.state,
+            **result.to_dict(),
+        }
 
     # -- reads ----------------------------------------------------------------
 
@@ -122,6 +164,35 @@ class MonitoringEngine:
 
     def get_versions(self, model_id: str) -> list[dict[str, Any]]:
         return self._storage.get_versions(model_id)
+
+    def get_health(self, model_id: str) -> dict[str, Any]:
+        return self._storage.get_health(model_id)
+
+    # -- experiments ------------------------------------------------------
+
+    def record_experiment(
+        self, name: str, kind: str, config: dict[str, Any], results: dict[str, Any], status: str = "completed"
+    ) -> dict[str, Any]:
+        experiment_id = self._storage.create_experiment(name, kind, config, results, status)
+        return self._storage.get_experiment(experiment_id)
+
+    def list_experiments(self, kind: str | None = None) -> list[dict[str, Any]]:
+        return self._storage.list_experiments(kind=kind)
+
+    def get_experiment(self, experiment_id: int) -> dict[str, Any] | None:
+        return self._storage.get_experiment(experiment_id)
+
+    def diagnose_run(self, run_id: int) -> DiagnosisResult:
+        """Root-cause diagnosis for one stored run. Only meaningful for
+        adapters whose signals carry the confidence-bearing detail shape
+        modelwatch/diagnosis/engine.py expects (currently RAGAdapter) --
+        for others it degrades gracefully to "no signals are drifted"-
+        style output rather than raising, since a signal with no
+        recognisable confidence field just contributes zero evidence."""
+        run = self._storage.get_run(run_id)
+        if run is None:
+            raise RunNotFoundError(f"run '{run_id}' not found")
+        return diagnose(run["signals"])
 
     # -- self-healing ---------------------------------------------------------
 
@@ -153,6 +224,11 @@ class MonitoringEngine:
         self._storage.set_current_version(model_id, new_version)
         self._storage.add_version(model_id, version=new_version, reason="retrain")
         resolved_count = self._storage.resolve_alerts_for_model(model_id)
+        # A fresh baseline means "current" is now the reference again --
+        # any drifted/clean streak measured against the old baseline no
+        # longer means anything, so the health state resets rather than
+        # carrying over a stale streak count.
+        self._storage.set_health(model_id, "healthy", consecutive_drifted=0, consecutive_clean=0)
 
         logger.info(
             "model retrained",

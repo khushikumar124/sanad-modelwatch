@@ -76,10 +76,12 @@
   }
   .status.ok      { border-left: 3px solid var(--ok); }
   .status.drifted { border-left: 3px solid var(--danger); background: linear-gradient(90deg, var(--danger-bg), var(--panel) 45%); }
+  .status.warn    { border-left: 3px solid var(--warn); background: linear-gradient(90deg, var(--warn-bg), var(--panel) 45%); }
   .status .icon { font-size: 17px; line-height: 1.3; }
   .status .headline { font-size: 14.5px; font-weight: 600; }
   .status.ok .headline { color: var(--ok); }
   .status.drifted .headline { color: var(--danger); }
+  .status.warn .headline { color: var(--warn); }
   .status .detail { color: var(--text-2); margin-top: 3px; font-size: 12.5px; }
 
   /* ---------- identity strip ---------- */
@@ -258,12 +260,13 @@
   <h3 id="drawerTitle">Run detail</h3>
   <div class="sub" id="drawerSub"></div>
   <div class="kv" id="drawerStats"></div>
+  <div id="drawerDiagnosis"></div>
   <div id="drawerSignals"></div>
 </div>
 
 <script>
 const POLL_MS = 8000;
-let modelId = null, model = null, history = [], alerts = [], selectedRun = null, chart = null;
+let modelId = null, model = null, history = [], alerts = [], selectedRun = null, chart = null, health = null;
 
 const f3 = v => (v === null || v === undefined) ? "—" : Number(v).toFixed(3);
 const esc = s => { const d = document.createElement("div"); d.textContent = s ?? ""; return d.innerHTML; };
@@ -317,6 +320,18 @@ const ADAPTERS = {
       ? `Sample too small to judge (${s.n_events} of ${s.min_events} needed).`
       : `Refusal rate ${(100 * (s.refusal_rate ?? 0)).toFixed(0)}%, citation rate ${(100 * (s.citation_rate ?? 0)).toFixed(0)}% over ${s.n_events} request(s).`,
   },
+  rag: {
+    detector: "KS + Wasserstein + two-proportion z-test",
+    sample: s => (s.n_events ?? "—") + " requests",
+    qualitySub: () => "grounded-answer rate",
+    driftSub: s => `${s.n_signals_drifted ?? 0}/4 signals drifted`,
+    signalNote: "retrieval / generation / refusal / citation, each a real statistical test",
+    threshold: () => null,
+    healthy: s => `Retrieval, generation latency, refusal and citation validity all match baseline over ${s.n_events ?? 0} request(s).`,
+    degraded: s => s.sufficient_sample === false
+      ? `Sample too small to judge (${s.n_events} of ${s.min_events} needed).`
+      : `${s.n_signals_drifted ?? "?"} of 4 signals statistically differ from baseline over ${s.n_events} request(s). See diagnosis below.`,
+  },
 };
 const FALLBACK = {
   detector: "—", sample: () => "—", qualitySub: () => "", driftSub: () => "",
@@ -330,6 +345,11 @@ function thresholdOf(run) {
 }
 
 /* ---------------- rendering ---------------- */
+const HEALTH_LABELS = {
+  healthy: "Healthy", warning: "Warning — one drifted check", degraded: "Degraded — drift detected",
+  recovering: "Recovering — awaiting confirmation",
+};
+
 function renderStatus(latest) {
   const el = document.getElementById("status");
   const head = document.getElementById("statusHead");
@@ -345,14 +365,28 @@ function renderStatus(latest) {
   }
   const st = latest.statistics || {};
   const sp = spec();
-  if (latest.is_drifted || open) {
+  let state = (health && health.state) || (latest.is_drifted ? "degraded" : "healthy");
+  // An open alert is always an active incident regardless of what the
+  // health streak says -- guards against a model that had an alert from
+  // before health tracking existed (or any other state/alert desync).
+  if (open > 0 && state !== "degraded") state = "degraded";
+
+  if (state === "degraded") {
     el.className = "status drifted"; icon.textContent = "▲";
-    head.textContent = "Degraded — drift detected";
-    detail.textContent = sp.degraded(st, latest) +
-      ` ${open} open alert${open === 1 ? "" : "s"}.`;
+    head.textContent = HEALTH_LABELS.degraded;
+    detail.textContent = sp.degraded(st, latest) + ` ${open} open alert${open === 1 ? "" : "s"}.`;
+  } else if (state === "warning") {
+    el.className = "status warn"; icon.textContent = "!";
+    head.textContent = HEALTH_LABELS.warning;
+    detail.textContent = sp.degraded(st, latest) + " Not yet a confirmed incident — no alert raised.";
+  } else if (state === "recovering") {
+    el.className = "status warn"; icon.textContent = "↻";
+    head.textContent = HEALTH_LABELS.recovering;
+    detail.textContent = "Last check was clean, but recovery needs one more clean check to confirm. " +
+      `${open} open alert${open === 1 ? "" : "s"} still open until then.`;
   } else {
     el.className = "status ok"; icon.textContent = "●";
-    head.textContent = "Healthy";
+    head.textContent = HEALTH_LABELS.healthy;
     detail.textContent = sp.healthy(st, latest) + " No open alerts.";
   }
 }
@@ -542,6 +576,21 @@ const EXPLAIN = {
     <p><b>What it cannot do.</b> It says the system is behaving as it did at baseline. It does
     <i>not</i> say the answers are correct — a confidently wrong answer looks perfectly healthy
     here. That is what the golden set is for.</p>`,
+  rag: `
+    <p><b>What is being watched.</b> Sanad's real traffic, same as live_telemetry — but the raw
+    per-request values are kept (every retrieval distance, every latency, every citation outcome),
+    not just aggregate rates, so real statistical tests run against them.</p>
+    <p><b>How alerting works.</b> Four independent signals, each a real detector from
+    <code>modelwatch/drift/detectors.py</code>: <b>retrieval</b> (KS + Wasserstein on retrieval-score
+    distributions), <b>generation latency</b> (KS), <b>refusal</b> and <b>citation validity</b>
+    (two-proportion z-tests). Every signal reports a p-value/confidence, not just a boolean — see
+    a run's detail for the actual statistics.</p>
+    <p><b>Why this over live_telemetry.</b> A fixed tolerance can't tell a real shift from sampling
+    noise; these tests account for sample size directly, and Wasserstein distance catches a broad
+    gradual shift that a delta-vs-tolerance check can miss entirely.</p>
+    <p><b>Root-cause diagnosis.</b> When multiple signals drift together, "Why this alert?" below
+    ranks which subsystem (retrieval / generation / operational) is the more likely cause, using the
+    signals' own confidence values — not a separate model.</p>`,
 };
 
 function renderExplain() {
@@ -574,6 +623,36 @@ function renderExplain() {
     familiar distribution and still be wrong; quality only appears here when labels are supplied.</p>`;
 }
 
+/* ---------------- "why this alert?" ---------------- */
+async function renderDiagnosis(run) {
+  const box = document.getElementById("drawerDiagnosis");
+  if (!run.is_drifted) { box.innerHTML = ""; return; }
+  box.innerHTML = `<div class="explain" style="margin-bottom:14px;"><p>Loading diagnosis…</p></div>`;
+  let diag;
+  try {
+    diag = await get(`/runs/${run.id}/diagnosis`);
+  } catch (e) {
+    box.innerHTML = "";
+    return;
+  }
+  if (!diag.likely_subsystem) {
+    box.innerHTML = `<div class="explain" style="margin-bottom:14px;">
+      <p><b>Why this alert?</b> No single subsystem stands out from the drifted signal(s) alone.</p>
+    </div>`;
+    return;
+  }
+  const rankedRows = diag.ranked.map(r =>
+    `<div style="display:flex;justify-content:space-between;font-family:var(--mono);font-size:11px;color:var(--text-3);margin-top:2px;">
+       <span>${esc(r.subsystem)}</span><span>${r.score.toFixed(2)}</span>
+     </div>`).join("");
+  box.innerHTML = `<div class="explain" style="margin-bottom:14px;">
+    <p><b>Why this alert?</b> Likely subsystem: <b style="color:var(--danger);text-transform:uppercase;">${esc(diag.likely_subsystem)}</b>
+       (confidence ${diag.confidence.toFixed(2)})</p>
+    ${diag.reasoning.map(r => `<p>· ${esc(r)}</p>`).join("")}
+    <div style="margin-top:8px;">${rankedRows}</div>
+  </div>`;
+}
+
 /* ---------------- drawer ---------------- */
 function selectRun(id) {
   selectedRun = id;
@@ -592,6 +671,8 @@ function selectRun(id) {
     ? pairs.map(([k, v]) =>
         `<div class="k">${esc(k)}</div><div>${typeof v === "number" ? (Number.isInteger(v) ? v : v.toFixed(4)) : esc(String(v))}</div>`).join("")
     : `<div class="k">—</div><div>no statistics recorded</div>`;
+
+  renderDiagnosis(run);
 
   document.getElementById("drawerSignals").innerHTML = (run.signals || []).map(s => `
     <div class="item ${s.is_drifted ? "flagged" : ""}">
@@ -627,9 +708,10 @@ async function loadModels() {
 async function refresh() {
   try {
     if (!(await loadModels())) return;
-    [history, alerts] = await Promise.all([
+    [history, alerts, health] = await Promise.all([
       get(`/models/${modelId}/history`),
       get(`/alerts?model_id=${modelId}&active_only=true`),
+      get(`/models/${modelId}/health`).catch(() => null),
     ]);
     const latest = history[0] || null;
     renderStatus(latest);

@@ -47,8 +47,20 @@
   button, input, select, textarea { font: inherit; color: inherit; }
   ::selection { background: var(--accent-wash); }
 
+  /* ---------- motion ----------
+     A small, shared vocabulary of entrance animations, used deliberately
+     (new content appearing, a tab becoming active, a modal opening) --
+     never on hover-repeatable or poll-refreshed content, so nothing
+     "jumps" on every click or re-render. Respects reduced-motion. */
+  @keyframes fadeInUp { from { opacity: 0; transform: translateY(7px); } to { opacity: 1; transform: none; } }
+  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes popIn { from { opacity: 0; transform: scale(.96); } to { opacity: 1; transform: none; } }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; }
+  }
+
   /* ---------- app frame ---------- */
-  .app { display: flex; flex-direction: column; height: 100vh; }
+  .app { display: flex; flex-direction: column; height: 100vh; animation: fadeIn .35s ease; }
 
   .topbar {
     display: flex; align-items: center; gap: 10px;
@@ -71,6 +83,7 @@
   .linkish {
     background: none; border: none; color: var(--muted); cursor: pointer;
     font-size: 12px; padding: 5px 9px; border-radius: var(--r-sm);
+    transition: background .12s ease, color .12s ease;
   }
   .linkish:hover { background: var(--surface-2); color: var(--ink); }
 
@@ -93,9 +106,9 @@
   .doc-item {
     width: 100%; text-align: left; background: transparent; border: 1px solid transparent;
     border-radius: var(--r); padding: 10px 11px; margin-bottom: 3px; cursor: pointer;
-    transition: background .12s ease, border-color .12s ease;
+    transition: background .12s ease, border-color .12s ease, transform .12s ease;
   }
-  .doc-item:hover { background: var(--surface); border-color: var(--line-soft); }
+  .doc-item:hover { background: var(--surface); border-color: var(--line-soft); transform: translateX(2px); }
   .doc-item.active {
     background: var(--surface); border-color: var(--line); box-shadow: var(--shadow-sm);
   }
@@ -117,11 +130,11 @@
     display: inline-flex; align-items: center; justify-content: center; gap: 7px;
     background: var(--accent); color: #fff; border: none; cursor: pointer;
     border-radius: var(--r-sm); padding: 9px 15px; font-size: 13px; font-weight: 600;
-    transition: background .12s ease, transform .08s ease;
+    transition: background .12s ease, transform .12s ease, box-shadow .12s ease;
   }
-  .btn:hover { background: var(--accent-ink); }
-  .btn:active { transform: translateY(1px); }
-  .btn:disabled { opacity: .5; cursor: not-allowed; transform: none; }
+  .btn:hover { background: var(--accent-ink); transform: translateY(-1px); box-shadow: var(--shadow-sm); }
+  .btn:active { transform: translateY(1px); box-shadow: none; }
+  .btn:disabled { opacity: .5; cursor: not-allowed; transform: none; box-shadow: none; }
   .btn.ghost { background: var(--surface); color: var(--accent); border: 1px solid var(--line); }
   .btn.ghost:hover { background: var(--accent-wash); }
   .btn.wide { width: 100%; }
@@ -150,13 +163,16 @@
     background: none; border: none; cursor: pointer; position: relative;
     padding: 9px 15px 12px; font-size: 13.5px; font-weight: 550; color: var(--muted);
     border-radius: var(--r-sm) var(--r-sm) 0 0;
+    transition: color .15s ease, background .15s ease;
   }
   .tab:hover { color: var(--ink); background: var(--surface-2); }
   .tab.active { color: var(--accent-ink); }
-  .tab.active::after {
+  .tab::after {
     content: ""; position: absolute; left: 12px; right: 12px; bottom: -1px;
     height: 2px; background: var(--accent); border-radius: 2px;
+    opacity: 0; transform: scaleX(.6); transition: opacity .18s ease, transform .18s ease;
   }
+  .tab.active::after { opacity: 1; transform: scaleX(1); }
   .tab .count {
     display: inline-block; margin-left: 6px; font-size: 10.5px; font-weight: 700;
     padding: 1px 6px; border-radius: 999px; background: var(--line-soft); color: var(--ink-soft);
@@ -166,6 +182,7 @@
 
   .pane { flex: 1; overflow-y: auto; padding: 22px 26px 40px; }
   .pane[hidden] { display: none; }
+  .pane.pane-fade { animation: fadeInUp .22s ease; }
   .wrap { max-width: 780px; }
   .none { color: var(--muted); font-style: italic; }
 
@@ -203,9 +220,15 @@
     background: var(--surface); border: 1px solid var(--line-soft);
     border-left: 3px solid var(--line); border-radius: var(--r);
     padding: 15px 17px; margin-bottom: 11px; box-shadow: var(--shadow-sm);
-    transition: box-shadow .15s ease;
+    transition: box-shadow .15s ease, transform .15s ease;
+    animation: fadeInUp .32s ease backwards;
   }
-  .risk:hover { box-shadow: var(--shadow); }
+  .risk:hover { box-shadow: var(--shadow); transform: translateY(-1px); }
+  .risk:nth-child(1) { animation-delay: 0ms; }
+  .risk:nth-child(2) { animation-delay: 40ms; }
+  .risk:nth-child(3) { animation-delay: 80ms; }
+  .risk:nth-child(4) { animation-delay: 120ms; }
+  .risk:nth-child(n+5) { animation-delay: 150ms; }
   .risk.high { border-left-color: var(--high); }
   .risk.medium { border-left-color: var(--medium); }
   .risk.low { border-left-color: var(--low); }
@@ -236,7 +259,13 @@
   .sum-card {
     background: var(--surface); border: 1px solid var(--line-soft); border-radius: var(--r);
     padding: 15px 17px; box-shadow: var(--shadow-sm);
+    animation: fadeInUp .32s ease backwards; transition: box-shadow .15s ease, transform .15s ease;
   }
+  .sum-card:hover { box-shadow: var(--shadow); transform: translateY(-1px); }
+  .sum-grid > :nth-child(1) { animation-delay: 0ms; }
+  .sum-grid > :nth-child(2) { animation-delay: 40ms; }
+  .sum-grid > :nth-child(3) { animation-delay: 80ms; }
+  .sum-grid > :nth-child(n+4) { animation-delay: 120ms; }
   .sum-card h3 {
     margin: 0 0 9px; font-size: 10.5px; text-transform: uppercase; letter-spacing: .09em;
     color: var(--muted); font-weight: 650;
@@ -248,8 +277,10 @@
 
   /* ---------- chat ---------- */
   .chat-scroll { display: flex; flex-direction: column; gap: 15px; margin-bottom: 18px; }
-  .turn { display: flex; flex-direction: column; max-width: 88%; }
-  .turn.you { align-self: flex-end; align-items: flex-end; }
+  @keyframes turnInRight { from { opacity: 0; transform: translate(10px, 6px); } to { opacity: 1; transform: none; } }
+  @keyframes turnInLeft { from { opacity: 0; transform: translate(-10px, 6px); } to { opacity: 1; transform: none; } }
+  .turn { display: flex; flex-direction: column; max-width: 88%; animation: turnInLeft .25s ease backwards; }
+  .turn.you { align-self: flex-end; align-items: flex-end; animation-name: turnInRight; }
   .bubble { padding: 11px 15px; border-radius: 14px; font-size: 13.8px; }
   .turn.you .bubble { background: var(--accent); color: #fff; border-bottom-right-radius: 4px; }
   .turn.bot .bubble {
@@ -273,9 +304,11 @@
   .sugg {
     background: var(--surface); border: 1px solid var(--line); color: var(--ink-soft);
     border-radius: 999px; padding: 7px 14px; font-size: 12.5px; cursor: pointer;
-    transition: all .12s ease;
+    transition: all .12s ease; animation: popIn .22s ease backwards;
   }
-  .sugg:hover { border-color: var(--accent); color: var(--accent-ink); background: var(--accent-wash); }
+  .sugg:hover { border-color: var(--accent); color: var(--accent-ink); background: var(--accent-wash); transform: translateY(-1px); }
+  .sugg:nth-child(1) { animation-delay: 0ms; } .sugg:nth-child(2) { animation-delay: 30ms; }
+  .sugg:nth-child(3) { animation-delay: 60ms; } .sugg:nth-child(n+4) { animation-delay: 90ms; }
 
   .composer {
     display: flex; gap: 9px; position: sticky; bottom: 0;
@@ -324,6 +357,8 @@
     display: none; align-items: center; justify-content: center;
   }
   #login.show { display: flex; }
+  #login.show .login-card { animation: popIn .28s ease; }
+  #login.show .demo-hint { animation: fadeInUp .3s ease .08s backwards; }
   .login-card {
     background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg);
     padding: 34px; width: 348px; box-shadow: var(--shadow-lg);
@@ -333,9 +368,20 @@
   .login-card input {
     width: 100%; background: var(--surface-2); border: 1px solid var(--line);
     border-radius: var(--r-sm); padding: 11px 13px; margin-bottom: 10px; outline: none;
+    transition: border-color .12s ease, box-shadow .12s ease;
   }
   .login-card input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-wash); }
   #loginErr { color: var(--high); font-size: 12.5px; min-height: 17px; margin-top: 9px; }
+  /* Demo convenience only -- remove this block for any real deployment.
+     Sanad never stores plaintext passwords once created (see
+     sanad/create_user.py); this is a hint to whoever is running the
+     local demo, not something derived from the server. */
+  .demo-hint {
+    width: 348px; margin-top: 14px; padding: 11px 14px; border-radius: var(--r-sm);
+    background: var(--surface-2); border: 1px dashed var(--line);
+    font-size: 12px; color: var(--muted); text-align: center;
+  }
+  .demo-hint code { color: var(--ink); font-weight: 600; }
 
   @media (max-width: 860px) {
     .sidebar { display: none; }
@@ -346,13 +392,16 @@
 <body>
 
 <div id="login">
-  <div class="login-card">
-    <div class="mark">Sanad</div>
-    <p>Sign in to reach your contracts.</p>
-    <input type="text" id="loginUser" placeholder="Username" autocomplete="username" />
-    <input type="password" id="loginPass" placeholder="Password" autocomplete="current-password" />
-    <button class="btn wide" id="loginBtn">Sign in</button>
-    <div id="loginErr"></div>
+  <div>
+    <div class="login-card">
+      <div class="mark">Sanad</div>
+      <p>Sign in to reach your contracts.</p>
+      <input type="text" id="loginUser" placeholder="Username" autocomplete="username" />
+      <input type="password" id="loginPass" placeholder="Password" autocomplete="current-password" />
+      <button class="btn wide" id="loginBtn">Sign in</button>
+      <div id="loginErr"></div>
+    </div>
+    <div class="demo-hint">Demo credentials — <code>demo</code> / <code>demopass123</code></div>
   </div>
 </div>
 
@@ -410,6 +459,7 @@
           <button class="tab active" data-pane="risks">Risk scan <span class="count" id="tabRiskCount"></span></button>
           <button class="tab" data-pane="summary">Summary</button>
           <button class="tab" data-pane="ask">Ask</button>
+          <button class="tab" data-pane="compare">Compare</button>
           <span style="flex:1"></span>
           <button class="linkish" id="deleteBtn" title="Remove this document">Remove</button>
         </div>
@@ -424,6 +474,15 @@
               <input type="text" id="chatInput" placeholder="Ask about a specific term…" />
               <button class="btn" id="askBtn">Ask</button>
             </div>
+          </div>
+        </div>
+        <div class="pane" id="pane-compare" hidden>
+          <div class="wrap">
+            <div style="display:flex;gap:10px;align-items:center;margin-bottom:14px;">
+              <span class="fineprint">Compare against</span>
+              <select id="compareSelect"></select>
+            </div>
+            <div id="compareBody"></div>
           </div>
         </div>
       </div>
@@ -598,10 +657,18 @@ async function upload(file) {
 /* ---------------- tabs ---------------- */
 function showTab(name) {
   document.querySelectorAll(".tab").forEach(t => t.classList.toggle("active", t.dataset.pane === name));
-  ["risks", "summary", "ask"].forEach(p => {
+  ["risks", "summary", "ask", "compare"].forEach(p => {
     document.getElementById("pane-" + p).hidden = p !== name;
   });
+  // Retrigger the entrance animation on the pane we just revealed --
+  // removing then re-adding the class forces the browser to restart it,
+  // which a plain class toggle on an already-animated element won't do.
+  const shown = document.getElementById("pane-" + name);
+  shown.classList.remove("pane-fade");
+  void shown.offsetWidth;
+  shown.classList.add("pane-fade");
   if (name === "ask") setTimeout(() => document.getElementById("chatInput").focus(), 30);
+  if (name === "compare") renderCompareSelect();
 }
 
 /* ---------------- risks ---------------- */
@@ -648,6 +715,60 @@ function renderRisks(r) {
       'judge it yourself.</div>';
 
   body.innerHTML = '<div class="scanline">' + head + '</div>' + items;
+}
+
+/* ---------------- compare ---------------- */
+function renderCompareSelect() {
+  const sel = document.getElementById("compareSelect");
+  const others = docs.filter(d => d.doc_id !== currentId);
+  if (!others.length) {
+    sel.innerHTML = "";
+    document.getElementById("compareBody").innerHTML =
+      '<p class="none">Upload a second contract to compare against this one.</p>';
+    return;
+  }
+  const prev = sel.value;
+  sel.innerHTML = others.map(d => '<option value="' + d.doc_id + '">' + esc(d.filename) + '</option>').join("");
+  if (others.some(d => d.doc_id === prev)) sel.value = prev;
+  loadComparison();
+}
+
+async function loadComparison() {
+  const sel = document.getElementById("compareSelect");
+  const body = document.getElementById("compareBody");
+  if (!sel.value) return;
+  body.innerHTML = '<div class="skel"><div style="width:40%"></div><div style="width:90%"></div></div>';
+  try {
+    const c = await api("/documents/" + currentId + "/compare/" + sel.value);
+    renderComparison(c);
+  } catch (e) { body.innerHTML = '<p class="none">' + esc(e.message) + '</p>'; }
+}
+
+function renderComparison(c) {
+  const body = document.getElementById("compareBody");
+  const row = (r, side) => {
+    const dot = side === "shared" ? "both contracts" : side === "a" ? "this contract only" : "the other contract only";
+    return '<div class="risk ' + r.severity + '">' +
+      '<div class="risk-top"><span class="risk-title">' + esc(r.label) + '</span>' +
+      '<span class="sev-tag ' + r.severity + '">' + r.severity + '</span></div>' +
+      '<div class="risk-who">' + dot + '</div></div>';
+  };
+  const section = (title, rows, side) => rows.length
+    ? '<h4 style="margin:16px 0 8px;font-size:13px;color:var(--ink-2);">' + title + ' (' + rows.length + ')</h4>' +
+      rows.map(r => row(r, side)).join("")
+    : "";
+
+  const summary = '<div class="scanline">' +
+    '<span class="pill">this: ' + c.counts_a.high + ' high / ' + c.counts_a.medium + ' medium / ' + c.counts_a.low + ' low</span>' +
+    '<span class="pill">other: ' + c.counts_b.high + ' high / ' + c.counts_b.medium + ' medium / ' + c.counts_b.low + ' low</span>' +
+    '</div>';
+
+  const empty = !c.only_in_a.length && !c.only_in_b.length && !c.shared.length;
+  body.innerHTML = summary + (empty
+    ? '<div class="disclaimer">Neither contract triggered any risk rule, so there is nothing to compare yet.</div>'
+    : section("Only in this contract", c.only_in_a, "a") +
+      section("Only in the other contract", c.only_in_b, "b") +
+      section("In both contracts", c.shared, "shared"));
 }
 
 /* ---------------- summary ---------------- */
@@ -730,7 +851,13 @@ function renderChat() {
 
 function pushTurn(html) {
   (chatCache[currentId] = chatCache[currentId] || []).push(html);
-  renderChat();
+  // Append rather than re-render the whole log: renderChat() rebuilds
+  // every bubble's innerHTML, which would replay every earlier bubble's
+  // entrance animation each time a new message arrives. Appending only
+  // touches the new node, so only it animates in.
+  const log = document.getElementById("chatLog");
+  log.insertAdjacentHTML("beforeend", html);
+  log.scrollTop = log.scrollHeight;
 }
 
 async function ask() {
@@ -802,6 +929,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   document.getElementById("askBtn").onclick = ask;
   document.getElementById("chatInput").addEventListener("keydown", e => { if (e.key === "Enter") ask(); });
+  document.getElementById("compareSelect").onchange = loadComparison;
 
   document.getElementById("deleteBtn").onclick = async () => {
     if (!currentId) return;

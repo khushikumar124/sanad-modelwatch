@@ -19,14 +19,18 @@ from modelwatch.api.schemas import (
     AlertResponse,
     CheckRequest,
     CheckResponse,
+    DiagnosisResponse,
+    ExperimentResponse,
+    HealthResponse,
     ModelResponse,
+    RecordExperimentRequest,
     RegisterModelRequest,
     RetrainRequest,
     RunResponse,
     VersionResponse,
 )
 from modelwatch.config import config
-from modelwatch.core.engine import MonitoringEngine, ModelNotRegisteredError
+from modelwatch.core.engine import MonitoringEngine, ModelNotRegisteredError, RunNotFoundError
 from modelwatch.core.storage import ModelAlreadyExistsError, ModelNotFoundError, Storage
 
 logging.basicConfig(
@@ -71,7 +75,7 @@ def register_model(req: RegisterModelRequest):
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     try:
-        return engine.register_model(req.model_id, req.name, adapter, req.baseline_data)
+        return engine.register_model(req.model_id, req.name, adapter, req.baseline_data, config=req.config)
     except ModelAlreadyExistsError as e:
         raise HTTPException(status_code=409, detail=str(e))
 
@@ -125,11 +129,45 @@ def trigger_retrain(model_id: str, req: RetrainRequest):
         raise HTTPException(status_code=409, detail=str(e))
 
 
+@app.get("/models/{model_id}/health", response_model=HealthResponse)
+def get_health(model_id: str):
+    if engine.get_model(model_id) is None:
+        raise HTTPException(status_code=404, detail=f"model '{model_id}' not found")
+    return engine.get_health(model_id)
+
+
+@app.get("/runs/{run_id}/diagnosis", response_model=DiagnosisResponse)
+def get_diagnosis(run_id: int):
+    try:
+        result = engine.diagnose_run(run_id)
+    except RunNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    return result.to_dict()
+
+
 @app.get("/models/{model_id}/versions", response_model=list[VersionResponse])
 def get_versions(model_id: str):
     if engine.get_model(model_id) is None:
         raise HTTPException(status_code=404, detail=f"model '{model_id}' not found")
     return engine.get_versions(model_id)
+
+
+@app.post("/experiments", response_model=ExperimentResponse, status_code=201)
+def record_experiment(req: RecordExperimentRequest):
+    return engine.record_experiment(req.name, req.kind, req.config, req.results, status=req.status)
+
+
+@app.get("/experiments", response_model=list[ExperimentResponse])
+def list_experiments(kind: str | None = None):
+    return engine.list_experiments(kind=kind)
+
+
+@app.get("/experiments/{experiment_id}", response_model=ExperimentResponse)
+def get_experiment(experiment_id: int):
+    experiment = engine.get_experiment(experiment_id)
+    if experiment is None:
+        raise HTTPException(status_code=404, detail=f"experiment '{experiment_id}' not found")
+    return experiment
 
 
 @app.get("/", include_in_schema=False)
