@@ -38,6 +38,40 @@ def test_malformed_stored_hash_is_rejected_not_crashed():
         assert auth.verify_password(PASSWORD, junk) is False
 
 
+# -- admin list ---------------------------------------------------------
+
+
+@pytest.fixture
+def admin_users(monkeypatch):
+    from dataclasses import replace
+    from sanad.config import config as base_config
+
+    def _use(csv: str):
+        monkeypatch.setattr(auth, "config", replace(base_config, admin_users=csv))
+    return _use
+
+
+def test_is_admin_true_for_a_listed_user(admin_users):
+    admin_users("alice, bob")
+    assert auth.is_admin("alice") is True
+    assert auth.is_admin("bob") is True
+
+
+def test_is_admin_false_for_an_unlisted_user(admin_users):
+    admin_users("alice")
+    assert auth.is_admin("mallory") is False
+
+
+def test_is_admin_false_when_no_admins_configured(admin_users):
+    admin_users("")
+    assert auth.is_admin("anyone") is False
+
+
+def test_is_admin_false_for_none_username(admin_users):
+    admin_users("alice")
+    assert auth.is_admin(None) is False
+
+
 # -- session tokens ---------------------------------------------------------
 
 

@@ -99,3 +99,57 @@ def test_engine_persists_across_calls_within_same_url(fresh_db):
     db.save_document(_record())
     assert db.get_document("doc-1") is not None
     assert db.get_document("doc-1") is not None
+
+
+def test_owner_round_trips(fresh_db):
+    db.save_document(_record(owner="alice"))
+    assert db.get_document("doc-1").owner == "alice"
+
+
+def test_owner_defaults_to_none(fresh_db):
+    db.save_document(_record())
+    assert db.get_document("doc-1").owner is None
+
+
+def test_migration_adds_owner_column_to_a_pre_existing_database(tmp_path, monkeypatch):
+    """Simulates a real upgrade: a database created before the `owner`
+    column existed (documents_table minus that column, saved and
+    populated the old way), then db.py's normal startup path run against
+    it. Must add the column without losing the row already there."""
+    from sqlalchemy import Boolean, Column, Integer, MetaData, String, Table, Text, create_engine, insert
+
+    db_path = tmp_path / "pre_owner_column.db"
+    old_metadata = MetaData()
+    old_documents_table = Table(
+        "documents", old_metadata,
+        Column("doc_id", String, primary_key=True),
+        Column("filename", String, nullable=False),
+        Column("contract_type", String, nullable=True),
+        Column("chunk_count", Integer, nullable=False),
+        Column("used_ocr", Boolean, nullable=False),
+        Column("uploaded_at", String, nullable=False),
+        Column("text", Text, nullable=False),
+        Column("source_path", String, nullable=False),
+    )
+    old_engine = create_engine(f"sqlite:///{db_path}")
+    old_metadata.create_all(old_engine)
+    with old_engine.begin() as conn:
+        conn.execute(insert(old_documents_table).values(
+            doc_id="legacy-doc", filename="old.pdf", contract_type=None, chunk_count=3,
+            used_ocr=False, uploaded_at="2025-01-01T00:00:00+00:00", text="old text",
+            source_path="/tmp/old.pdf",
+        ))
+    old_engine.dispose()
+
+    monkeypatch.setattr(db, "config", replace(base_config, database_url=f"sqlite:///{db_path}"))
+    db.reset_engine()
+
+    record = db.get_document("legacy-doc")
+    assert record is not None
+    assert record.owner is None  # migrated column, not backfilled
+    assert record.filename == "old.pdf"  # pre-existing data survived
+
+    # And the migrated database now behaves like a fresh one going forward.
+    db.save_document(_record(doc_id="new-doc", owner="alice"))
+    assert db.get_document("new-doc").owner == "alice"
+    db.reset_engine()

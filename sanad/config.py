@@ -108,6 +108,11 @@ class Config:
     session_ttl_seconds: int = _int_env("SANAD_SESSION_TTL_SECONDS", 60 * 60 * 12)
     # Set when serving over HTTPS so the session cookie is not sent in clear.
     session_cookie_secure: bool = _bool_env("SANAD_SESSION_COOKIE_SECURE", False)
+    # Comma-separated usernames (must also appear in SANAD_USERS) who can
+    # see and act on every document, not just their own -- see db.py's
+    # `owner` column and api/auth.py's is_admin(). Empty by default: no
+    # admins, everyone is scoped to their own uploads once auth is on.
+    admin_users: str = os.environ.get("SANAD_ADMIN_USERS", "")
 
     log_level: str = os.environ.get("SANAD_LOG_LEVEL", "INFO")
     # "text" (default): the original human-readable single-line format.

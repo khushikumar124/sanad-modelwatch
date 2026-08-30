@@ -22,7 +22,7 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from sanad import db
-from sanad.api.auth import COOKIE_NAME, authenticate, create_session, current_user, require_user
+from sanad.api.auth import COOKIE_NAME, authenticate, create_session, current_user, is_admin, require_user
 from sanad.api import telemetry
 from sanad.api.schemas import (
     ChatRequest,
@@ -100,9 +100,24 @@ app.add_middleware(
 app.middleware("http")(request_id_middleware)
 
 
-def _get_record(doc_id: str) -> db.DocumentRecord:
+def _can_access(record: db.DocumentRecord, user: str | None) -> bool:
+    """A document with no owner (uploaded before this column existed, or
+    while auth is off) is accessible to anyone -- see documents_table's
+    comment in db.py for why that's the deliberate default rather than
+    an oversight. Otherwise only the owner or an admin (SANAD_ADMIN_USERS)
+    can reach it."""
+    if not config.auth_enabled or not record.owner:
+        return True
+    return record.owner == user or is_admin(user)
+
+
+def _get_record(doc_id: str, user: str | None = None) -> db.DocumentRecord:
     record = db.get_document(doc_id)
-    if record is None:
+    # Same 404 whether the document doesn't exist or simply isn't this
+    # user's -- a 403 would confirm to an unauthorized caller that the
+    # doc_id is real, which is exactly the fact access control exists to
+    # not leak.
+    if record is None or not _can_access(record, user):
         raise HTTPException(status_code=404, detail=f"document '{doc_id}' not found")
     return record
 
@@ -170,7 +185,7 @@ async def upload_document(
     ingested.source_path = locator
 
     record = db.DocumentRecord.from_ingested(
-        ingested, filename=file.filename or f"{doc_id}{ext}", contract_type=contract_type
+        ingested, filename=file.filename or f"{doc_id}{ext}", contract_type=contract_type, owner=_user
     )
     db.save_document(record)
 
@@ -180,17 +195,17 @@ async def upload_document(
 
 @app.get("/api/documents", response_model=list[DocumentResponse])
 def list_documents(_user: str | None = Depends(require_user)):
-    return [r.to_response() for r in db.list_documents()]
+    return [r.to_response() for r in db.list_documents() if _can_access(r, _user)]
 
 
 @app.get("/api/documents/{doc_id}", response_model=DocumentResponse)
 def get_document(doc_id: str, _user: str | None = Depends(require_user)):
-    return _get_record(doc_id).to_response()
+    return _get_record(doc_id, _user).to_response()
 
 
 @app.delete("/api/documents/{doc_id}", status_code=204)
 def delete_document(doc_id: str, _user: str | None = Depends(require_user)):
-    record = _get_record(doc_id)
+    record = _get_record(doc_id, _user)
     vector_store.delete_document(doc_id)
     object_store.delete(record.source_path)
     db.delete_document(doc_id)
@@ -198,7 +213,7 @@ def delete_document(doc_id: str, _user: str | None = Depends(require_user)):
 
 @app.post("/api/documents/{doc_id}/summarize", response_model=SummaryResponse)
 def summarize_document(doc_id: str, _user: str | None = Depends(require_user)):
-    record = _get_record(doc_id)
+    record = _get_record(doc_id, _user)
     try:
         result = summarize(record.text, llm_client)
     except LLMConnectionError as e:
@@ -211,7 +226,7 @@ def get_risks(doc_id: str, _user: str | None = Depends(require_user)):
     """Rule-based scan for unfavourable clauses. No LLM call, so this is
     instant and its output is reproducible -- re-chunking from the stored
     text is cheap next to re-extracting the PDF."""
-    record = _get_record(doc_id)
+    record = _get_record(doc_id, _user)
     return flag_risks(chunk_document(record.text)).to_dict()
 
 
@@ -222,7 +237,7 @@ def get_clauses(doc_id: str, _user: str | None = Depends(require_user)):
     index from a risk finding, coverage result, or obligation always
     refers to the same clause here. This is what the frontend's
     click-to-source jump and risk heatmap are built on."""
-    record = _get_record(doc_id)
+    record = _get_record(doc_id, _user)
     chunks = chunk_document(record.text)
     return {"clauses": [{"index": c.index, "heading": c.heading, "text": c.text} for c in chunks]}
 
@@ -233,17 +248,17 @@ def get_coverage(doc_id: str, _user: str | None = Depends(require_user)):
     anywhere in the document. No LLM call, instant, reproducible -- same
     reasoning as get_risks(). See coverage.py: `not_found` never means
     `missing`, only that this scan's patterns didn't match anything."""
-    record = _get_record(doc_id)
+    record = _get_record(doc_id, _user)
     return check_coverage(chunk_document(record.text)).to_dict()
 
 
-def _compute_obligations(doc_id: str) -> dict:
-    record = _get_record(doc_id)
+def _compute_obligations(doc_id: str, user: str | None) -> dict:
+    record = _get_record(doc_id, user)
     return extract_obligations(record.text, llm_client).to_dict()
 
 
-def _compute_review(doc_id: str) -> dict:
-    record = _get_record(doc_id)
+def _compute_review(doc_id: str, user: str | None) -> dict:
+    record = _get_record(doc_id, user)
     chunks = chunk_document(record.text)
     risk_report = flag_risks(chunks)
     coverage_report = check_coverage(chunks)
@@ -266,7 +281,7 @@ def get_obligations(doc_id: str, _user: str | None = Depends(require_user)):
     docstring). Prefer POST .../obligations/job for anything driving a
     UI; this synchronous form is kept for scripts/tests/curl."""
     try:
-        return _compute_obligations(doc_id)
+        return _compute_obligations(doc_id, _user)
     except LLMConnectionError as e:
         raise HTTPException(status_code=503, detail=str(e))
 
@@ -283,7 +298,7 @@ def get_review(doc_id: str, _user: str | None = Depends(require_user)):
     Synchronous form, kept for scripts/tests/curl -- prefer
     POST .../review/job for anything driving a UI (see jobs.py)."""
     try:
-        return _compute_review(doc_id)
+        return _compute_review(doc_id, _user)
     except LLMConnectionError as e:
         raise HTTPException(status_code=503, detail=str(e))
 
@@ -294,8 +309,8 @@ def start_obligations_job(doc_id: str, _user: str | None = Depends(require_user)
     immediately with a job_id -- poll GET /api/jobs/{job_id} for the
     result. See sanad/jobs.py for why this exists: the synchronous
     version above can block a browser tab for minutes."""
-    _get_record(doc_id)  # 404 fast, before handing work to a background thread
-    job_id = jobs.submit("obligations", lambda: _compute_obligations(doc_id))
+    _get_record(doc_id, _user)  # 404 fast, before handing work to a background thread
+    job_id = jobs.submit("obligations", lambda: _compute_obligations(doc_id, _user))
     return {"job_id": job_id}
 
 
@@ -303,8 +318,8 @@ def start_obligations_job(doc_id: str, _user: str | None = Depends(require_user)
 def start_review_job(doc_id: str, _user: str | None = Depends(require_user)):
     """Starts the Review synthesis in the background -- see
     start_obligations_job() and sanad/jobs.py."""
-    _get_record(doc_id)
-    job_id = jobs.submit("review", lambda: _compute_review(doc_id))
+    _get_record(doc_id, _user)
+    job_id = jobs.submit("review", lambda: _compute_review(doc_id, _user))
     return {"job_id": job_id}
 
 
@@ -324,8 +339,8 @@ def compare_documents(
     the same rule-based risk scan get_risks() runs -- comparison is just
     a set operation over which rules fired in each, so it's deterministic
     and instant, same as the single-document scan."""
-    record_a = _get_record(doc_id)
-    record_b = _get_record(other_doc_id)
+    record_a = _get_record(doc_id, _user)
+    record_b = _get_record(other_doc_id, _user)
     report_a = flag_risks(chunk_document(record_a.text))
     report_b = flag_risks(chunk_document(record_b.text))
     return compare_risk_reports(report_a, report_b).to_dict()
@@ -335,7 +350,7 @@ def compare_documents(
 def chat_with_document(
     doc_id: str, req: ChatRequest, _user: str | None = Depends(require_user)
 ):
-    _get_record(doc_id)  # 404 if unknown, even though vector_store would just return no hits
+    _get_record(doc_id, _user)  # 404 if unknown, even though vector_store would just return no hits
     started = time.perf_counter()
     try:
         result = ask(doc_id, req.question, vector_store, llm_client)
@@ -378,7 +393,7 @@ def cross_document_chat(req: CrossChatRequest, _user: str | None = Depends(requi
     distinct feature (the Compare tab)."""
     if len(req.doc_ids) < 2:
         raise HTTPException(status_code=400, detail="cross-document chat needs at least 2 doc_ids")
-    documents = [(doc_id, _get_record(doc_id).filename) for doc_id in req.doc_ids]
+    documents = [(doc_id, _get_record(doc_id, _user).filename) for doc_id in req.doc_ids]
     try:
         result = ask_across_documents(documents, req.question, vector_store, llm_client)
     except LLMConnectionError as e:

@@ -215,6 +215,12 @@ All via environment variables (see `config.py`):
 | `SANAD_USERS`                          | *(unset)*           | `name:hash` pairs, comma-separated (see `create_user.py`) |
 | `SANAD_SESSION_TTL_SECONDS`             | `43200`             | Session lifetime (12 hours) |
 | `SANAD_SESSION_COOKIE_SECURE`            | `false`             | Set true when serving over HTTPS |
+| `SANAD_ADMIN_USERS`                    | *(unset)*           | Comma-separated usernames (must also be in `SANAD_USERS`) who can see and act on every document, not just their own |
+| `SANAD_MAX_UPLOAD_MB`                   | `25`                | Upload size ceiling |
+| `SANAD_CLAMAV_HOST` / `SANAD_CLAMAV_PORT` | *(unset)* / `3310` | Optional ClamAV malware scan on upload |
+| `SANAD_RETRIEVAL_MODE`                  | `hybrid`            | `hybrid` (dense + BM25) or `dense` only |
+| `SANAD_STORAGE_BACKEND`                 | `local`             | `local` disk or `s3` for uploaded files |
+| `SANAD_LOG_FORMAT`                      | `text`              | `text` or `json` structured logging |
 
 ## Testing
 
@@ -306,12 +312,18 @@ actual scanned document).
   over SQLite by default, or Postgres via `SANAD_DATABASE_URL`) and the
   original uploaded file in a real object store (`storage.py`, local disk
   by default, or an S3-compatible bucket via `SANAD_STORAGE_BACKEND=s3`).
-  Both are still single-tenant: one shared ChromaDB collection filtered by
-  `doc_id`, no row/object-level access control.
-- **Authentication exists but is minimal.** Session-cookie login
-  (`SANAD_AUTH_ENABLED=true`) gates every route behind one shared set of
-  users (`SANAD_USERS`) — enough to keep a deployment off the open
-  internet, not multi-tenancy or per-user document isolation.
+- **Authentication with document-level ownership, not full multi-tenancy.**
+  Session-cookie login (`SANAD_AUTH_ENABLED=true`) gates every route, and
+  each uploaded document is scoped to the user who uploaded it (a 404, not
+  a 403, for anyone else — access control shouldn't confirm a document
+  exists) unless they're listed in `SANAD_ADMIN_USERS`. A document
+  uploaded before this existed (or while auth is off) has no owner and
+  stays visible to any authenticated user — a deliberate backward-
+  compatibility default, not an oversight. What this is *not*: separate
+  ChromaDB collections per user, per-tenant rate limits, or org/team
+  structure above the individual-user level — one shared vector store
+  filtered by `doc_id`, and a flat `SANAD_USERS` list, not a real
+  multi-tenant architecture.
 - **No response streaming.** Summarize/chat calls block until the local
   model finishes generating the full response — there's no token-by-token
   streaming to the frontend, so a slow model feels slow with no

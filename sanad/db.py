@@ -26,7 +26,21 @@ import logging
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, Column, Integer, MetaData, String, Table, Text, create_engine, delete, insert, select
+from sqlalchemy import (
+    Boolean,
+    Column,
+    Integer,
+    MetaData,
+    String,
+    Table,
+    Text,
+    create_engine,
+    delete,
+    inspect,
+    insert,
+    select,
+    text,
+)
 from sqlalchemy.engine import Engine
 
 from sanad.config import config
@@ -47,6 +61,14 @@ documents_table = Table(
     Column("uploaded_at", String, nullable=False),
     Column("text", Text, nullable=False),
     Column("source_path", String, nullable=False),
+    # Nullable, not backfilled: a row from before this column existed
+    # (or any row saved while auth is off) has owner=NULL, which app.py
+    # treats as "unowned" -- visible to any authenticated user, not just
+    # nobody. That is a deliberate backward-compatibility default, not
+    # an oversight: making every pre-existing document invisible the
+    # moment this shipped would be a worse surprise than the narrower
+    # one (pre-existing documents stay shared) it trades for.
+    Column("owner", String, nullable=True),
 )
 
 
@@ -64,6 +86,11 @@ class DocumentRecord:
     uploaded_at: str
     text: str
     source_path: str
+    #: username of whoever uploaded this document, or None for a
+    #: document uploaded before this column existed, or while auth is
+    #: off. See documents_table's own comment on what None means for
+    #: access control.
+    owner: str | None = None
 
     def to_response(self) -> dict:
         return {
@@ -76,7 +103,13 @@ class DocumentRecord:
         }
 
     @classmethod
-    def from_ingested(cls, ingested: IngestedDocument, filename: str, contract_type: str | None) -> "DocumentRecord":
+    def from_ingested(
+        cls,
+        ingested: IngestedDocument,
+        filename: str,
+        contract_type: str | None,
+        owner: str | None = None,
+    ) -> "DocumentRecord":
         return cls(
             doc_id=ingested.doc_id,
             filename=filename,
@@ -86,6 +119,7 @@ class DocumentRecord:
             uploaded_at=datetime.now(timezone.utc).isoformat(),
             text=ingested.text,
             source_path=ingested.source_path,
+            owner=owner,
         )
 
 
@@ -103,7 +137,26 @@ def get_engine() -> Engine:
         connect_args = {"check_same_thread": False} if config.database_url.startswith("sqlite") else {}
         _engine = create_engine(config.database_url, connect_args=connect_args, future=True)
         metadata.create_all(_engine)
+        _migrate_add_owner_column(_engine)
     return _engine
+
+
+def _migrate_add_owner_column(engine: Engine) -> None:
+    """metadata.create_all() only creates tables that don't exist yet --
+    it never alters an existing one, so a database created before the
+    `owner` column existed needs an explicit ALTER TABLE. Standard SQL,
+    works unchanged on both SQLite and Postgres. Checked via the
+    inspector (not a try/except around the ALTER) so this stays a no-op,
+    not a warning-logging one, on every subsequent startup."""
+    inspector = inspect(engine)
+    if "documents" not in inspector.get_table_names():
+        return  # a fresh database -- create_all() above already has the column
+    existing_columns = {c["name"] for c in inspector.get_columns("documents")}
+    if "owner" in existing_columns:
+        return
+    logger.info("migrating documents table: adding owner column")
+    with engine.begin() as conn:
+        conn.execute(text("ALTER TABLE documents ADD COLUMN owner VARCHAR"))
 
 
 def reset_engine() -> None:
@@ -119,7 +172,7 @@ def _row_to_record(row) -> DocumentRecord:
     return DocumentRecord(
         doc_id=row.doc_id, filename=row.filename, contract_type=row.contract_type,
         chunk_count=row.chunk_count, used_ocr=bool(row.used_ocr), uploaded_at=row.uploaded_at,
-        text=row.text, source_path=row.source_path,
+        text=row.text, source_path=row.source_path, owner=row.owner,
     )
 
 

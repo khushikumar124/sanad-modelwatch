@@ -192,3 +192,13 @@ def require_user(request: Request) -> str | None:
     if user is None:
         raise HTTPException(status_code=401, detail="authentication required")
     return user
+
+
+def is_admin(username: str | None) -> bool:
+    """True for a username listed in SANAD_ADMIN_USERS. Always False when
+    auth is off (username is always None then) or the list is empty --
+    there is no admin concept without authentication in the first place."""
+    if not username or not config.admin_users:
+        return False
+    admins = {u.strip() for u in config.admin_users.split(",") if u.strip()}
+    return username in admins
