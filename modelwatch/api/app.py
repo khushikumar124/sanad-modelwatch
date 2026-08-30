@@ -204,6 +204,34 @@ def get_trace_diagnosis(trace_id: str):
     return diagnose_trace(trace["data"]).to_dict()
 
 
+@app.get("/config")
+def get_config():
+    """Read-only view of the thresholds/parameters that actually govern
+    detection right now -- for the dashboard's Statistical Analysis page
+    to show real configured values instead of hardcoding a copy in JS
+    that could silently drift from modelwatch/config.py. Excludes paths
+    and anything that could reveal deployment details (db_path,
+    api_host, webhook URL); this is meant to be readable by the
+    dashboard's own JS with no auth in front of it, same as every other
+    ModelWatch endpoint."""
+    return {
+        "ks_pvalue_threshold": config.ks_pvalue_threshold,
+        "classifier_drift_feature_fraction": config.classifier_drift_feature_fraction,
+        "classifier_bonferroni_correction": config.classifier_bonferroni_correction,
+        "llm_similarity_threshold": config.llm_similarity_threshold,
+        "telemetry_refusal_tolerance": config.telemetry_refusal_tolerance,
+        "telemetry_citation_tolerance": config.telemetry_citation_tolerance,
+        "telemetry_latency_multiplier": config.telemetry_latency_multiplier,
+        "telemetry_min_events": config.telemetry_min_events,
+        "rag_alpha": config.rag_alpha,
+        "rag_min_events": config.rag_min_events,
+        "health_warning_after_consecutive": config.health_warning_after_consecutive,
+        "health_degraded_after_consecutive": config.health_degraded_after_consecutive,
+        "health_recovery_after_consecutive": config.health_recovery_after_consecutive,
+        "mlflow_enabled": config.mlflow_enabled,
+    }
+
+
 @app.get("/", include_in_schema=False)
 def _root_to_dashboard():
     """The dashboard lives under /dashboard, so a bare host:port 404s --
