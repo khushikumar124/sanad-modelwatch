@@ -271,6 +271,7 @@
   <div class="group">
     <div class="group-label">Monitoring</div>
     <a class="nav-item" data-page="monitoring">Live Traffic &amp; Drift</a>
+    <a class="nav-item" data-page="statistics">Statistical Analysis</a>
   </div>
   <div class="group">
     <div class="group-label">Intelligence</div>
@@ -347,6 +348,32 @@
     <div class="panel">
       <h2>How this is measured</h2>
       <div class="explain" id="explain"></div>
+    </div>
+  </section>
+
+  <section class="page" data-page="statistics">
+    <div class="page-head">
+      <h1>Statistical Analysis</h1>
+      <div class="sub">The actual detectors this instance runs, their assumptions, and the thresholds currently configured -- not a general stats reference.</div>
+    </div>
+    <div class="panel">
+      <h2>Active thresholds <span class="note">from GET /config -- real values, not hardcoded here</span></h2>
+      <div id="statsConfig"><div class="empty">Loading…</div></div>
+    </div>
+    <div class="panel">
+      <h2>Detector reference <span class="note">every statistical test implemented in modelwatch/drift/detectors.py</span></h2>
+      <div id="statsReference"></div>
+    </div>
+    <div class="panel">
+      <h2>Statistical vs. practical significance</h2>
+      <div class="explain">
+        <p><b>Statistical significance</b> (p-value) answers "is this difference unlikely to be noise?" A large
+        enough sample makes even a trivial difference statistically significant.</p>
+        <p><b>Practical significance</b> (effect size -- the KS statistic, the Wasserstein distance in the
+        signal's own units, PSI, MMD) answers "is this difference big enough to matter?" A small sample can hide
+        a real, large effect; both numbers are reported together for every detector so a reader can judge each
+        question separately, rather than one boolean collapsing both into "drifted: yes/no".</p>
+      </div>
     </div>
   </section>
 
@@ -1151,8 +1178,66 @@ document.querySelectorAll(".nav-item").forEach(item => {
     currentPage = page;
     if (page === "experiments") loadExperiments();
     if (page === "registry") { loadRegistry(); loadVersions(); }
+    if (page === "statistics") loadStatisticsPage();
   });
 });
+
+/* ---------------- statistical analysis ---------------- */
+const DETECTOR_REFERENCE = [
+  {
+    name: "Kolmogorov–Smirnov (KS) two-sample test", used_by: "classifier, generation_latency, retrieval",
+    formula: "D = sup_x |F_baseline(x) − F_current(x)|  (max distance between empirical CDFs)",
+    assumptions: "Continuous distribution; no assumption about its shape (distribution-free).",
+    why: "Catches shifts, spread changes, and multimodal changes a mean/variance comparison would miss.",
+  },
+  {
+    name: "Wasserstein distance (earth mover's distance)", used_by: "retrieval (RAGAdapter)",
+    formula: "W₁(P, Q) = inf over couplings γ of E[|x−y|]  (scipy's exact 1D solution)",
+    assumptions: "None beyond having two real-valued samples; no p-value -- it's a direct distance, not a hypothesis test.",
+    why: "Can catch a broad, gradual shift that KS's single-max-gap statistic can under-report.",
+  },
+  {
+    name: "Population Stability Index (PSI)", used_by: "any bounded numeric signal (classifier_adapter)",
+    formula: "PSI = Σ (current_i − baseline_i) × ln(current_i / baseline_i), over quantile bins of the baseline",
+    assumptions: "Enough spread in the baseline to form distinct bins; standard credit-risk banding (under 0.1 none, 0.1-0.25 moderate, over 0.25 significant), not invented here.",
+    why: "Widely used, interpretable banding instead of a raw statistic with no intuitive scale.",
+  },
+  {
+    name: "Two-proportion z-test", used_by: "refusal rate, citation validity (RAGAdapter)",
+    formula: "z = (p̂₁ − p̂₂) / sqrt(p̂(1−p̂)(1/n₁ + 1/n₂)), pooled p̂",
+    assumptions: "Large-sample normal approximation to the binomial; degrades below MIN_SAMPLE_SIZE.",
+    why: "Accounts for sample size directly -- the same 10-point rate jump is far less surprising on 10 events than on 1000, which a fixed-tolerance delta check can't tell apart.",
+  },
+  {
+    name: "Maximum Mean Discrepancy (MMD, RBF kernel)", used_by: "embedding (RAGAdapter)",
+    formula: "MMD² = mean(k(x,x')) + mean(k(y,y')) − 2·mean(k(x,y)), k = RBF with median-heuristic bandwidth",
+    assumptions: "p-value estimated by permutation (reshuffling baseline/current labels), not closed-form; independence between permutations.",
+    why: "Compares whole embedding-vector distributions directly, catching a topic/phrasing shift that collapsing to one scalar (e.g. mean similarity) can hide entirely.",
+  },
+];
+
+function renderStatsReference() {
+  document.getElementById("statsReference").innerHTML = DETECTOR_REFERENCE.map(d => `
+    <div class="item">
+      <div class="n">${esc(d.name)}</div>
+      <div style="margin-top:4px;color:var(--text-3);font-size:10.5px;">used by: ${esc(d.used_by)}</div>
+      <pre>${esc(d.formula)}</pre>
+      <div style="margin-top:6px;color:var(--text-2);"><b>Assumptions:</b> ${esc(d.assumptions)}</div>
+      <div style="margin-top:4px;color:var(--text-2);"><b>Why this one:</b> ${esc(d.why)}</div>
+    </div>`).join("");
+}
+
+async function loadStatisticsPage() {
+  renderStatsReference();
+  const box = document.getElementById("statsConfig");
+  try {
+    const cfg = await get("/config");
+    box.innerHTML = '<div class="kv">' + Object.entries(cfg)
+      .map(([k, v]) => `<div class="k">${esc(k)}</div><div>${esc(String(v))}</div>`).join("") + '</div>';
+  } catch (e) {
+    box.innerHTML = '<div class="empty">' + esc(e.message) + '</div>';
+  }
+}
 
 refresh();
 setInterval(refresh, POLL_MS);
