@@ -1,5 +1,7 @@
 # Sanad + ModelWatch
 
+[![tests](https://github.com/khushikumar124/sanad-modelwatch/actions/workflows/tests.yml/badge.svg)](https://github.com/khushikumar124/sanad-modelwatch/actions/workflows/tests.yml)
+
 Two projects that show each other's failure modes.
 
 **[Sanad](sanad/)** is a RAG app: upload a contract (PDF or scanned

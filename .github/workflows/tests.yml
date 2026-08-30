@@ -1,0 +1,44 @@
+name: tests
+
+# Runs the full unit/integration suite (sanad + modelwatch +
+# modelwatch-client) on every push and PR. Deliberately does NOT run
+# scripts/quality_gate.py here -- that gate calls a real local Ollama
+# model, which isn't something a hosted CI runner has, and pulling a
+# multi-GB model on every push would make this workflow slow and
+# expensive for what a student project needs. The unit suite already
+# doesn't touch a real LLM (features that need one are tested against a
+# scripted/fake LLM client, per each test file's own fixtures), so it
+# runs the same everywhere. quality_gate.py stays a local/pre-release
+# check -- see its own docstring.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: |
+            sanad/requirements.txt
+            modelwatch/requirements.txt
+
+      - name: Install system dependencies (OCR fallback)
+        run: sudo apt-get update && sudo apt-get install -y tesseract-ocr
+
+      - name: Install Python dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r sanad/requirements.txt
+          pip install -r modelwatch/requirements.txt
+          pip install -e "./modelwatch-client[langchain]"
+
+      - name: Run test suite
+        run: python -m pytest -v
