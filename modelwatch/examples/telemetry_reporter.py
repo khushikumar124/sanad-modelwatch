@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
 import time
 
 import requests
@@ -29,6 +30,27 @@ logger = logging.getLogger(__name__)
 
 MODEL_ID = "sanad-live"
 MODEL_NAME = "Sanad Chatbot (live traffic)"
+
+
+def login_if_needed(session: requests.Session, sanad_url: str) -> None:
+    """If Sanad has auth on, /api/telemetry (and now, with full traces
+    on, potentially real contract text) is behind require_user -- this
+    reporter needs its own session cookie just like a browser would.
+    Credentials come from env vars, never CLI args (a password on the
+    command line lands in shell history and `ps`)."""
+    username = os.environ.get("SANAD_REPORTER_USERNAME")
+    password = os.environ.get("SANAD_REPORTER_PASSWORD")
+    session_info = session.get(f"{sanad_url}/api/auth/session").json()
+    if not session_info.get("auth_enabled"):
+        return
+    if not username or not password:
+        raise SystemExit(
+            "Sanad has auth enabled but SANAD_REPORTER_USERNAME/SANAD_REPORTER_PASSWORD "
+            "are not set -- this reporter can't sign in to read /api/telemetry."
+        )
+    res = session.post(f"{sanad_url}/api/auth/login", json={"username": username, "password": password})
+    res.raise_for_status()
+    logger.info("signed in to sanad as %s", username)
 
 
 def fetch_events(session: requests.Session, sanad_url: str, drain: bool = True) -> list[dict]:
@@ -60,6 +82,30 @@ def report(session: requests.Session, modelwatch_url: str, events: list[dict]) -
     return res.json()
 
 
+def report_traces(session: requests.Session, modelwatch_url: str, events: list[dict]) -> int:
+    """Forwards each event's full_trace (present only when Sanad has
+    SANAD_TELEMETRY_FULL_TRACE on) to ModelWatch's RAG X-Ray store. Runs
+    independently of model registration/drift-checking -- a trace is raw
+    per-request detail, not a statistical signal, so there's no reason to
+    gate it on whether the drift model exists yet."""
+    reported = 0
+    for event in events:
+        trace = event.get("full_trace")
+        if not trace:
+            continue
+        trace_id = trace.get("trace_id") or event.get("trace_id")
+        try:
+            res = session.post(
+                f"{modelwatch_url}/traces",
+                json={"trace_id": trace_id, "model_id": MODEL_ID, "data": trace},
+            )
+            res.raise_for_status()
+            reported += 1
+        except requests.exceptions.RequestException as e:
+            logger.warning("failed to report trace %s: %s", trace_id, e)
+    return reported
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--sanad-url", default="http://localhost:8100")
@@ -85,6 +131,7 @@ def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
     session = requests.Session()
+    login_if_needed(session, args.sanad_url)
 
     if args.baseline:
         events = fetch_events(session, args.sanad_url, drain=False)
@@ -99,28 +146,37 @@ def main() -> None:
         return
 
     print(f"Polling {args.sanad_url} every {args.interval:g}s. Ctrl-C to stop.")
+    # Accumulated across polls until there's enough for a judgeable drift
+    # batch. Traces are forwarded every poll regardless of this -- a
+    # trace is one request's own detail, not a statistical sample, so
+    # the RAG X-Ray would otherwise sit empty for --min-batch questions
+    # for no reason connected to what it actually shows.
+    pending: list[dict] = []
     while True:
         try:
-            # Look without consuming: a batch of one or two events cannot
-            # support a rate, so hold them until there are enough to judge.
-            waiting = fetch_events(session, args.sanad_url, drain=False)
-            if len(waiting) < args.min_batch and not args.once:
-                print(f"· {len(waiting)}/{args.min_batch} questions buffered, waiting")
-                time.sleep(args.interval)
-                continue
             events = fetch_events(session, args.sanad_url, drain=True)
-            if not events:
-                print("· no new questions")
-            elif not is_registered(session, args.modelwatch_url):
-                register(session, args.modelwatch_url, events)
-                print(f"registered baseline from {len(events)} events")
+            if events:
+                traced = report_traces(session, args.modelwatch_url, events)
+                pending.extend(events)
+                if traced:
+                    print(f"· {traced} trace(s) sent to RAG X-Ray")
+
+            if len(pending) >= args.min_batch or (args.once and pending):
+                batch, pending = pending, []
+                if not is_registered(session, args.modelwatch_url):
+                    register(session, args.modelwatch_url, batch)
+                    print(f"registered baseline from {len(batch)} events")
+                else:
+                    r = report(session, args.modelwatch_url, batch)
+                    flag = " DRIFT" if r["is_drifted"] else ""
+                    print(
+                        f"reported {len(batch)} event(s) · grounded "
+                        f"{r['quality_score']:.0%} · drift {r['drift_score']:.2f}{flag}"
+                    )
+            elif not events:
+                print(f"· no new questions ({len(pending)}/{args.min_batch} buffered for drift check)")
             else:
-                r = report(session, args.modelwatch_url, events)
-                flag = " DRIFT" if r["is_drifted"] else ""
-                print(
-                    f"reported {len(events)} event(s) · grounded "
-                    f"{r['quality_score']:.0%} · drift {r['drift_score']:.2f}{flag}"
-                )
+                print(f"· {len(pending)}/{args.min_batch} questions buffered for drift check")
         except requests.exceptions.ConnectionError as e:
             print(f"could not reach a service: {e}")
         except requests.exceptions.HTTPError as e:

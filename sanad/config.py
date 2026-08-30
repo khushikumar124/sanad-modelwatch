@@ -70,5 +70,18 @@ class Config:
 
     log_level: str = os.environ.get("SANAD_LOG_LEVEL", "INFO")
 
+    # Whether the full per-request RAG trace (question, answer, retrieved/
+    # cited evidence text, claim verification) is included in telemetry
+    # events, on top of the operational-only fields that were there
+    # before. This is a deliberate privacy tradeoff, not a free feature:
+    # with it on, anything reading Sanad's telemetry (currently
+    # modelwatch/examples/telemetry_reporter.py, feeding ModelWatch's RAG
+    # X-Ray) sees real question/answer/clause text, not just rates and
+    # latencies. Default on because ModelWatch's RAG X-Ray (reconstructing
+    # a request's full pipeline for debugging) needs it to be meaningful;
+    # turn off for a deployment where the monitor must not see contract
+    # content at all.
+    telemetry_full_trace: bool = _bool_env("SANAD_TELEMETRY_FULL_TRACE", True)
+
 
 config = Config()

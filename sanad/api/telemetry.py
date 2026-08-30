@@ -7,15 +7,20 @@ forwards to the monitoring API. That keeps the dependency pointing one
 way -- Sanad runs perfectly well with nothing watching it, and swapping
 the monitoring system out touches nothing in this app.
 
-Only operational facts are stored: whether the answer was grounded, how
-many clauses it cited, how long it took, and (as of this schema) which
-retrieval/generation stage that time went to and how similar the
-retrieved chunks were to the query. No question text, no answer text, no
-chunk text. doc_id is kept because it is already an opaque identifier
-Sanad assigns on upload, not contract content -- it lets a reader ask
-"is this drift concentrated on one document?" without exposing what the
-document says. Contracts are confidential, and a monitoring buffer is
-not a place to put their contents.
+Operational facts (whether the answer was grounded, how many clauses it
+cited, how long it took, retrieval/generation latency split, retrieval
+similarity scores) are always recorded and never include contract text.
+doc_id is kept because it is already an opaque identifier Sanad assigns
+on upload, not contract content.
+
+`full_trace`, gated by `config.telemetry_full_trace` (default on -- see
+that config field's own comment), is the one deliberate exception: when
+enabled, the complete RAG trace (sanad/features/trace.py) -- question,
+answer, retrieved/cited clause text, claim verification -- rides along
+too, because ModelWatch's RAG X-Ray needs real content to reconstruct a
+request's pipeline, not just rates. This is a real privacy tradeoff, not
+a free one: turn `SANAD_TELEMETRY_FULL_TRACE=false` off for a deployment
+where the monitor must never see contract content.
 
 The five original fields (grounded, citations, latency_ms, parse_error,
 retrieved) are kept exactly as they were: `LiveTelemetryAdapter` reads
@@ -62,6 +67,10 @@ class ChatEvent:
     #: how many excerpt numbers the model named before filtering to valid
     #: ones; citations / citations_requested is a citation-validity ratio.
     citations_requested: int = 0
+    #: full RAGTrace.to_dict() when config.telemetry_full_trace is on,
+    #: else None. See this module's docstring -- the one field here that
+    #: can carry real contract text.
+    full_trace: dict[str, Any] | None = None
 
 
 _events: deque[ChatEvent] = deque(maxlen=_MAX_EVENTS)
@@ -82,7 +91,11 @@ def record_chat(
     retrieval_latency_ms: float = 0.0,
     generation_latency_ms: float = 0.0,
     citations_requested: int = 0,
+    full_trace: dict[str, Any] | None = None,
 ) -> None:
+    trace_id = uuid.uuid4().hex
+    if full_trace is not None:
+        full_trace = {**full_trace, "trace_id": trace_id}
     with _lock:
         _events.append(
             ChatEvent(
@@ -92,7 +105,7 @@ def record_chat(
                 latency_ms=round(latency_ms, 1),
                 parse_error=parse_error,
                 retrieved=retrieved,
-                trace_id=uuid.uuid4().hex,
+                trace_id=trace_id,
                 doc_id=doc_id,
                 model_name=model_name,
                 top_k=top_k,
@@ -100,6 +113,7 @@ def record_chat(
                 retrieval_latency_ms=round(retrieval_latency_ms, 1),
                 generation_latency_ms=round(generation_latency_ms, 1),
                 citations_requested=citations_requested,
+                full_trace=full_trace,
             )
         )
 

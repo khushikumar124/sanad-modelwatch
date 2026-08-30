@@ -31,6 +31,13 @@ class VectorStore:
         )
         self._embedder = embedder or Embedder()
 
+    @property
+    def embedder(self) -> Embedder:
+        """Exposes the store's own Embedder so other callers (e.g. the
+        RAG trace) reuse the already-loaded model instead of loading a
+        second copy of it."""
+        return self._embedder
+
     def add_document(self, doc_id: str, chunks: list[Chunk]) -> None:
         if not chunks:
             return

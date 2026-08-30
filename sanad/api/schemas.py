@@ -67,3 +67,7 @@ class ChatResponse(BaseModel):
     cited_chunks: list[dict[str, Any]]
     retrieved_chunks: list[dict[str, Any]]
     parse_error: bool
+    #: observable pipeline trace -- retrieval ranking/scores, claim-level
+    #: evidence verification, grounding/citation scores. See
+    #: sanad/features/trace.py. Never includes hidden model reasoning.
+    trace: dict[str, Any]

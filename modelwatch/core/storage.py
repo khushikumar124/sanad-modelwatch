@@ -92,9 +92,25 @@ CREATE TABLE IF NOT EXISTS experiments (
     status TEXT NOT NULL DEFAULT 'completed'
 );
 
+-- Full per-request RAG traces (question, answer, evidence, claim
+-- verification -- see sanad/features/trace.py), reported only when the
+-- sending app opts in (Sanad: SANAD_TELEMETRY_FULL_TRACE). Deliberately
+-- separate from `runs`: a trace is one request's raw pipeline detail for
+-- the RAG X-Ray to browse/diagnose, not a statistical drift result, and
+-- keeping it out of runs/signals means every existing adapter/query
+-- against those tables is unaffected by whether tracing is on.
+CREATE TABLE IF NOT EXISTS traces (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    trace_id TEXT NOT NULL,
+    model_id TEXT NOT NULL REFERENCES models(model_id),
+    created_at TEXT NOT NULL,
+    data_json TEXT NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_runs_model ON runs(model_id, timestamp);
 CREATE INDEX IF NOT EXISTS idx_alerts_model ON alerts(model_id, resolved);
 CREATE INDEX IF NOT EXISTS idx_baselines_model ON baselines(model_id, version);
+CREATE INDEX IF NOT EXISTS idx_traces_model ON traces(model_id, created_at);
 """
 
 
@@ -407,6 +423,52 @@ class Storage:
                 d["config"] = json.loads(d.pop("config_json"))
                 d["results"] = json.loads(d.pop("results_json"))
                 rows.append(d)
+            return rows
+
+    # -- traces (RAG X-Ray) ------------------------------------------------
+
+    def create_trace(self, trace_id: str, model_id: str, data: dict[str, Any]) -> int:
+        with self._cursor() as cur:
+            cur.execute(
+                "INSERT INTO traces (trace_id, model_id, created_at, data_json) VALUES (?, ?, ?, ?)",
+                (trace_id, model_id, _now(), json.dumps(data)),
+            )
+            return cur.lastrowid
+
+    def get_trace(self, trace_id: str) -> dict[str, Any] | None:
+        with self._cursor() as cur:
+            cur.execute("SELECT * FROM traces WHERE trace_id = ?", (trace_id,))
+            row = cur.fetchone()
+            if row is None:
+                return None
+            d = dict(row)
+            d["data"] = json.loads(d.pop("data_json"))
+            return d
+
+    def list_traces(
+        self, model_id: str | None = None, limit: int = 50, grounded: bool | None = None
+    ) -> list[dict[str, Any]]:
+        """Newest first. `grounded` filters on the trace's own recorded
+        groundedness (read out of data_json), used by the RAG X-Ray to
+        jump straight to refusals when triaging "why did this go wrong"."""
+        query = "SELECT * FROM traces"
+        params: list[Any] = []
+        if model_id is not None:
+            query += " WHERE model_id = ?"
+            params.append(model_id)
+        query += " ORDER BY created_at DESC LIMIT ?"
+        params.append(limit if grounded is None else max(limit * 4, limit))  # overfetch when filtering in Python
+        with self._cursor() as cur:
+            cur.execute(query, params)
+            rows = []
+            for row in cur.fetchall():
+                d = dict(row)
+                d["data"] = json.loads(d.pop("data_json"))
+                if grounded is not None and d["data"].get("grounded") != grounded:
+                    continue
+                rows.append(d)
+                if len(rows) >= limit:
+                    break
             return rows
 
     def set_health(

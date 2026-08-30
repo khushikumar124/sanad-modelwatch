@@ -182,6 +182,20 @@ class MonitoringEngine:
     def get_experiment(self, experiment_id: int) -> dict[str, Any] | None:
         return self._storage.get_experiment(experiment_id)
 
+    # -- traces (RAG X-Ray) -------------------------------------------------
+
+    def record_trace(self, trace_id: str, model_id: str, data: dict[str, Any]) -> dict[str, Any]:
+        self._storage.create_trace(trace_id, model_id, data)
+        return self._storage.get_trace(trace_id)
+
+    def get_trace(self, trace_id: str) -> dict[str, Any] | None:
+        return self._storage.get_trace(trace_id)
+
+    def list_traces(
+        self, model_id: str | None = None, limit: int = 50, grounded: bool | None = None
+    ) -> list[dict[str, Any]]:
+        return self._storage.list_traces(model_id=model_id, limit=limit, grounded=grounded)
+
     def diagnose_run(self, run_id: int) -> DiagnosisResult:
         """Root-cause diagnosis for one stored run. Only meaningful for
         adapters whose signals carry the confidence-bearing detail shape

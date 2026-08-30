@@ -300,6 +300,55 @@
   .cite-head { font-size: 11.5px; font-weight: 650; color: var(--ink-soft); }
   .cite-text { font-family: var(--serif); font-size: 12.5px; color: var(--muted); margin-top: 3px; }
 
+  /* ---------- AI / RAG trace ---------- */
+  .trace { margin-top: 8px; }
+  .trace summary {
+    cursor: pointer; font-size: 12px; color: var(--muted); list-style: none;
+    display: inline-flex; align-items: center; gap: 5px;
+  }
+  .trace summary::-webkit-details-marker { display: none; }
+  .trace-body {
+    margin-top: 9px; border: 1px solid var(--line-soft); border-radius: var(--r-sm);
+    padding: 12px 13px; background: var(--surface-2);
+  }
+  .trace-section { margin-bottom: 12px; }
+  .trace-section:last-child { margin-bottom: 0; }
+  .trace-section h4 {
+    margin: 0 0 7px; font-size: 10px; text-transform: uppercase; letter-spacing: .08em;
+    color: var(--muted); font-weight: 650;
+  }
+  .trace-row {
+    display: flex; align-items: center; gap: 9px; padding: 5px 0;
+    border-bottom: 1px solid var(--line-soft); font-size: 12px;
+  }
+  .trace-row:last-child { border-bottom: none; }
+  .trace-rank {
+    font-family: var(--mono, monospace); font-size: 10.5px; color: var(--muted);
+    width: 16px; flex: none; text-align: right;
+  }
+  .trace-bar { flex: 1; height: 5px; background: var(--line-soft); border-radius: 3px; overflow: hidden; min-width: 40px; }
+  .trace-bar i { display: block; height: 100%; background: var(--accent); border-radius: 3px; transition: width .4s ease; }
+  .trace-score { font-family: var(--mono, monospace); font-size: 11px; color: var(--ink-soft); width: 38px; flex: none; text-align: right; }
+  .trace-heading { flex: 2; color: var(--ink-soft); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .trace-cited { font-size: 9.5px; font-weight: 700; text-transform: uppercase; color: var(--accent-ink); flex: none; }
+  .claim-row { padding: 7px 0; border-bottom: 1px solid var(--line-soft); }
+  .claim-row:last-child { border-bottom: none; }
+  .claim-text { font-size: 12.5px; color: var(--ink-soft); }
+  .claim-status {
+    display: inline-block; margin-left: 7px; font-size: 9px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: .05em; padding: 1px 6px; border-radius: 3px;
+    vertical-align: middle;
+  }
+  .claim-status.supported { background: var(--good-wash); color: var(--good); }
+  .claim-status.partial { background: var(--medium-wash); color: var(--medium); }
+  .claim-status.unsupported { background: var(--high-wash); color: var(--high); }
+  .claim-evidence {
+    margin-top: 3px; font-family: var(--serif); font-size: 11.5px; color: var(--muted);
+    padding-left: 10px; border-left: 2px solid var(--line);
+  }
+  .trace-meta { display: flex; flex-wrap: wrap; gap: 6px; font-size: 10.5px; color: var(--muted); }
+  .trace-meta span { background: var(--surface); border: 1px solid var(--line-soft); border-radius: 999px; padding: 2px 9px; }
+
   .suggest { display: flex; gap: 7px; flex-wrap: wrap; margin-bottom: 14px; }
   .sugg {
     background: var(--surface); border: 1px solid var(--line); color: var(--ink-soft);
@@ -860,6 +909,51 @@ function pushTurn(html) {
   log.scrollTop = log.scrollHeight;
 }
 
+/* ---------------- AI / RAG trace ---------------- */
+function renderTraceHTML(t) {
+  const retrievalRows = (t.retrieval || []).map(r => `
+    <div class="trace-row">
+      <span class="trace-rank">#${r.rank}</span>
+      <span class="trace-heading" title="${esc(r.text_preview)}">${esc(r.heading || ("clause " + r.chunk_index))}</span>
+      <span class="trace-bar"><i style="width:${Math.round(r.similarity * 100)}%"></i></span>
+      <span class="trace-score">${r.similarity.toFixed(2)}</span>
+      ${r.cited ? '<span class="trace-cited">cited</span>' : ""}
+    </div>`).join("");
+
+  const claimRows = (t.claims || []).map(c => `
+    <div class="claim-row">
+      <span class="claim-text">${esc(c.claim)}</span>
+      <span class="claim-status ${c.status}">${c.status}</span>
+      ${c.best_evidence_preview ? '<div class="claim-evidence">' + esc(c.best_evidence_preview) + ' &nbsp;·&nbsp; sim ' + c.best_similarity.toFixed(2) + '</div>' : ""}
+    </div>`).join("");
+
+  const meta = [
+    ["model", t.model_name], ["embeddings", t.embedding_model + " (" + t.embedding_dims + "d)"],
+    ["top-k", t.top_k], ["prompt", t.prompt_version],
+    ["retrieval", Math.round(t.retrieval_latency_ms) + "ms"], ["generation", Math.round(t.generation_latency_ms) + "ms"],
+  ].map(([k, v]) => `<span>${k}: ${esc(String(v))}</span>`).join("");
+
+  const scores = [
+    t.grounding_score !== null ? "grounding " + Math.round(t.grounding_score * 100) + "%" : null,
+    t.citation_score !== null ? "citation " + Math.round(t.citation_score * 100) + "%" : null,
+  ].filter(Boolean).map(s => `<span>${s}</span>`).join("");
+
+  return `<details class="trace">
+    <summary>◈ AI / RAG trace</summary>
+    <div class="trace-body">
+      <div class="trace-section">
+        <h4>Retrieval inspector — why these clauses</h4>
+        ${retrievalRows || '<div class="none">No chunks retrieved.</div>'}
+      </div>
+      ${claimRows ? '<div class="trace-section"><h4>Claim verification</h4>' + claimRows + '</div>' : ""}
+      <div class="trace-section">
+        <h4>Pipeline</h4>
+        <div class="trace-meta">${meta}${scores}</div>
+      </div>
+    </div>
+  </details>`;
+}
+
 async function ask() {
   const input = document.getElementById("chatInput");
   const q = input.value.trim();
@@ -892,6 +986,7 @@ async function ask() {
       '<div class="bubble ' + (a.grounded ? "" : "refused") + '">' + esc(a.answer) + '</div>' +
       (cites ? '<details class="cite"><summary>❝ ' + a.cited_chunks.length + ' clause' +
         (a.cited_chunks.length > 1 ? "s" : "") + ' cited</summary>' + cites + '</details>' : "") +
+      (a.trace ? renderTraceHTML(a.trace) : "") +
       '</div>');
   } catch (e) {
     wait.remove();

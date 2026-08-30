@@ -78,6 +78,8 @@ adapter file plus one registry line
 
 ## Documents
 
+- [rag_trace.md](rag_trace.md) -- making the AI visible: retrieval inspector,
+  claim verification, the RAG X-Ray, and per-request diagnosis
 - [telemetry.md](telemetry.md) -- the structured per-request event schema
 - [evaluation.md](evaluation.md) -- the Sanad RAG evaluation dataset + engine
 - [drift_detection.md](drift_detection.md) -- statistical detectors, RAGAdapter,

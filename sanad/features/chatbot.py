@@ -21,6 +21,12 @@ from sanad.rag.vector_store import VectorStore
 
 logger = logging.getLogger(__name__)
 
+#: Bumped whenever CHATBOT_SYSTEM_PROMPT's wording changes meaningfully.
+#: Recorded in the RAG trace (sanad/features/trace.py) and usable as a
+#: ModelWatch registry config field so "did quality change because the
+#: prompt changed" is answerable instead of assumed.
+CHATBOT_PROMPT_VERSION = "v1"
+
 CHATBOT_SYSTEM_PROMPT = """You are a legal assistant answering questions about a specific uploaded contract, using ONLY the numbered excerpts provided by the user.
 
 Rules:

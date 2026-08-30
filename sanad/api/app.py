@@ -43,6 +43,7 @@ from sanad.config import config
 from sanad.features.chatbot import ask
 from sanad.features.comparison import compare_risk_reports
 from sanad.features.risk_flagger import flag_risks
+from sanad.features.trace import build_trace
 from sanad.features.summarizer import summarize
 from sanad.ingestion.chunking import chunk_document
 from sanad.ingestion.extraction import IMAGE_EXTENSIONS
@@ -303,7 +304,13 @@ def chat_with_document(
         result = ask(doc_id, req.question, vector_store, llm_client)
     except LLMConnectionError as e:
         raise HTTPException(status_code=503, detail=str(e))
-    # Operational facts only -- no question or answer text. See telemetry.py.
+    trace = build_trace(
+        req.question, result, model_name=config.ollama_model,
+        top_k=config.retrieval_top_k, embedder=vector_store.embedder,
+    )
+    # Operational facts are always recorded; the full trace (question,
+    # answer, clause text) rides along only when telemetry_full_trace is
+    # on -- see telemetry.py's docstring for the tradeoff.
     telemetry.record_chat(
         grounded=result.grounded,
         citations=len(result.cited_chunks),
@@ -317,8 +324,9 @@ def chat_with_document(
         retrieval_latency_ms=result.retrieval_latency_ms,
         generation_latency_ms=result.generation_latency_ms,
         citations_requested=result.citations_requested,
+        full_trace=trace.to_dict() if config.telemetry_full_trace else None,
     )
-    return result.to_dict()
+    return {**result.to_dict(), "trace": trace.to_dict()}
 
 
 @app.get("/api/telemetry")

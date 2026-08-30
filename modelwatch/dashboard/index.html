@@ -250,6 +250,21 @@
   </div>
 
   <div class="panel">
+    <h2>RAG X-Ray <span class="note">recent full traces &middot; click a row to inspect the pipeline</span>
+      <span style="flex:1"></span>
+      <select id="traceFilter" style="margin-left:auto;">
+        <option value="">All requests</option>
+        <option value="true">Grounded only</option>
+        <option value="false">Refusals only</option>
+      </select>
+    </h2>
+    <table>
+      <thead><tr><th>Time</th><th>Question</th><th>Status</th><th>Best sim</th><th>Latency</th></tr></thead>
+      <tbody id="traceBody"><tr><td colspan="5" class="empty">No traces recorded yet -- enable SANAD_TELEMETRY_FULL_TRACE and ask a question in Sanad.</td></tr></tbody>
+    </table>
+  </div>
+
+  <div class="panel">
     <h2>How this is measured</h2>
     <div class="explain" id="explain"></div>
   </div>
@@ -723,8 +738,92 @@ async function refresh() {
     renderExplain();
     const sel = history.find(r => r.id === selectedRun) || latest;
     if (sel) renderSignals(sel);
+    loadTraces();
   } catch (e) { console.error("refresh failed", e); }
 }
+
+/* ---------------- RAG X-Ray ---------------- */
+async function loadTraces() {
+  const groundedFilter = document.getElementById("traceFilter").value;
+  const params = new URLSearchParams({ model_id: modelId, limit: "30" });
+  if (groundedFilter) params.set("grounded", groundedFilter);
+  try {
+    const traces = await get(`/traces?${params}`);
+    renderTraceList(traces);
+  } catch (e) { console.error("loadTraces failed", e); }
+}
+
+function renderTraceList(traces) {
+  const body = document.getElementById("traceBody");
+  if (!traces.length) {
+    body.innerHTML = '<tr><td colspan="5" class="empty">No traces recorded yet -- enable SANAD_TELEMETRY_FULL_TRACE and ask a question in Sanad.</td></tr>';
+    return;
+  }
+  body.innerHTML = traces.map(t => {
+    const d = t.data || {};
+    const bestSim = (d.retrieval || []).reduce((m, r) => Math.max(m, r.similarity || 0), 0);
+    const latency = (d.retrieval_latency_ms || 0) + (d.generation_latency_ms || 0);
+    return `<tr data-trace="${t.trace_id}">
+      <td>${time(t.created_at)}</td>
+      <td style="max-width:320px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(d.question || "")}</td>
+      <td><span class="tag ${d.grounded ? "clean" : "drift"}">${d.grounded ? "grounded" : "refused"}</span></td>
+      <td>${f3(bestSim)}</td>
+      <td>${Math.round(latency)}ms</td>
+    </tr>`;
+  }).join("");
+  [...body.querySelectorAll("tr[data-trace]")].forEach(tr =>
+    tr.onclick = () => openTrace(tr.dataset.trace));
+}
+
+async function openTrace(traceId) {
+  let trace, diagnosis;
+  try {
+    [trace, diagnosis] = await Promise.all([
+      get(`/traces/${traceId}`),
+      get(`/traces/${traceId}/diagnosis`),
+    ]);
+  } catch (e) { console.error("openTrace failed", e); return; }
+
+  const d = trace.data || {};
+  document.getElementById("drawerTitle").textContent = (d.grounded ? "Grounded answer" : "Refused") + " · RAG X-Ray";
+  document.getElementById("drawerSub").textContent = day(trace.created_at) + " · " + traceId.slice(0, 12);
+
+  const statPairs = {
+    question: d.question, answer: d.answer, model: d.model_name,
+    embeddings: d.embedding_model, "top-k": d.top_k, prompt: d.prompt_version,
+    "retrieval ms": d.retrieval_latency_ms, "generation ms": d.generation_latency_ms,
+    "grounding score": d.grounding_score, "citation score": d.citation_score,
+  };
+  document.getElementById("drawerStats").innerHTML = Object.entries(statPairs)
+    .filter(([, v]) => v !== null && v !== undefined)
+    .map(([k, v]) => `<div class="k">${esc(k)}</div><div>${esc(String(v))}</div>`).join("");
+
+  const catLabel = diagnosis.category.replace(/_/g, " ");
+  document.getElementById("drawerDiagnosis").innerHTML = `<div class="explain" style="margin-bottom:14px;">
+    <p><b>Diagnosis:</b> <span style="text-transform:uppercase;color:${diagnosis.category === "none" ? "var(--ok)" : "var(--danger)"};">${esc(catLabel)}</span></p>
+    ${diagnosis.reasoning.map(r => `<p>&middot; ${esc(r)}</p>`).join("")}
+    ${diagnosis.operational_note ? `<p>&middot; <i>${esc(diagnosis.operational_note)}</i></p>` : ""}
+  </div>`;
+
+  document.getElementById("drawerSignals").innerHTML =
+    '<div style="font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;color:var(--text-3);margin-bottom:8px;">Retrieval inspector</div>' +
+    (d.retrieval || []).map(r => `
+      <div class="item ${r.cited ? "" : ""}" style="${r.cited ? "border-color:rgba(69,200,184,.4);" : ""}">
+        <div class="n">#${r.rank} ${esc(r.heading || ("clause " + r.chunk_index))} ${r.cited ? " · cited" : ""}</div>
+        <div style="margin-top:4px;color:var(--text-2);font-family:var(--mono);">similarity ${f3(r.similarity)}</div>
+        <pre>${esc(r.text_preview || "")}</pre>
+      </div>`).join("") +
+    (d.claims && d.claims.length ? '<div style="font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;color:var(--text-3);margin:14px 0 8px;">Claim verification</div>' +
+      d.claims.map(c => `
+        <div class="item ${c.status === "unsupported" ? "flagged" : ""}">
+          <div class="n">${esc(c.claim)}</div>
+          <div style="margin-top:4px;color:${c.status === "supported" ? "var(--ok)" : c.status === "partial" ? "var(--warn)" : "var(--danger)"};font-family:var(--mono);">${c.status} &middot; sim ${f3(c.best_similarity)}</div>
+        </div>`).join("") : "");
+
+  document.getElementById("drawer").classList.add("open");
+}
+
+document.getElementById("traceFilter").addEventListener("change", loadTraces);
 
 document.getElementById("modelSelect").addEventListener("change", e => {
   modelId = e.target.value; selectedRun = null;

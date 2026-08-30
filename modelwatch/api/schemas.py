@@ -124,3 +124,24 @@ class VersionResponse(BaseModel):
     version: int
     created_at: str
     reason: str
+
+
+class RecordTraceRequest(BaseModel):
+    trace_id: str
+    model_id: str
+    data: dict[str, Any]
+
+
+class TraceResponse(BaseModel):
+    id: int
+    trace_id: str
+    model_id: str
+    created_at: str
+    data: dict[str, Any]
+
+
+class TraceDiagnosisResponse(BaseModel):
+    category: str
+    reasoning: list[str]
+    evidence: dict[str, Any]
+    operational_note: str | None

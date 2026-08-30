@@ -24,14 +24,18 @@ from modelwatch.api.schemas import (
     HealthResponse,
     ModelResponse,
     RecordExperimentRequest,
+    RecordTraceRequest,
     RegisterModelRequest,
     RetrainRequest,
     RunResponse,
+    TraceDiagnosisResponse,
+    TraceResponse,
     VersionResponse,
 )
 from modelwatch.config import config
 from modelwatch.core.engine import MonitoringEngine, ModelNotRegisteredError, RunNotFoundError
 from modelwatch.core.storage import ModelAlreadyExistsError, ModelNotFoundError, Storage
+from modelwatch.diagnosis.trace_diagnosis import diagnose_trace
 
 logging.basicConfig(
     level=getattr(logging, config.log_level, logging.INFO),
@@ -168,6 +172,36 @@ def get_experiment(experiment_id: int):
     if experiment is None:
         raise HTTPException(status_code=404, detail=f"experiment '{experiment_id}' not found")
     return experiment
+
+
+@app.post("/traces", response_model=TraceResponse, status_code=201)
+def record_trace(req: RecordTraceRequest):
+    """Stores a full per-request RAG trace for the RAG X-Ray. Reported
+    only by senders that opt in (Sanad: SANAD_TELEMETRY_FULL_TRACE) --
+    see sanad/api/telemetry.py's docstring for the privacy tradeoff this
+    represents; ModelWatch's own storage never requires it."""
+    return engine.record_trace(req.trace_id, req.model_id, req.data)
+
+
+@app.get("/traces", response_model=list[TraceResponse])
+def list_traces(model_id: str | None = None, limit: int = 50, grounded: bool | None = None):
+    return engine.list_traces(model_id=model_id, limit=limit, grounded=grounded)
+
+
+@app.get("/traces/{trace_id}", response_model=TraceResponse)
+def get_trace(trace_id: str):
+    trace = engine.get_trace(trace_id)
+    if trace is None:
+        raise HTTPException(status_code=404, detail=f"trace '{trace_id}' not found")
+    return trace
+
+
+@app.get("/traces/{trace_id}/diagnosis", response_model=TraceDiagnosisResponse)
+def get_trace_diagnosis(trace_id: str):
+    trace = engine.get_trace(trace_id)
+    if trace is None:
+        raise HTTPException(status_code=404, detail=f"trace '{trace_id}' not found")
+    return diagnose_trace(trace["data"]).to_dict()
 
 
 @app.get("/", include_in_schema=False)
