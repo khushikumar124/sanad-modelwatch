@@ -37,6 +37,14 @@ from modelwatch.core.engine import MonitoringEngine, ModelNotRegisteredError, Ru
 from modelwatch.core.storage import ModelAlreadyExistsError, ModelNotFoundError, Storage
 from modelwatch.diagnosis.trace_diagnosis import diagnose_trace
 
+# JobManager is a generic, Sanad-independent utility (in-process
+# ThreadPoolExecutor + polling) -- reused here rather than duplicated,
+# same principle as everywhere else in this codebase. Drift Lab needing
+# its own instance (not sanad.jobs.jobs, the module-level singleton
+# Sanad's own API uses) keeps the two apps' job queues from competing
+# for the same worker pool.
+from sanad.jobs import JobManager
+
 logging.basicConfig(
     level=getattr(logging, config.log_level, logging.INFO),
     format="%(asctime)s %(levelname)s %(name)s %(message)s",
@@ -45,6 +53,7 @@ logger = logging.getLogger(__name__)
 
 storage = Storage(config.db_path)
 engine = MonitoringEngine(storage)
+drift_lab_jobs = JobManager(max_workers=1)  # one at a time -- each run is a real, sequential Ollama workload
 
 app = FastAPI(title="ModelWatch API")
 app.add_middleware(
@@ -202,6 +211,60 @@ def get_trace_diagnosis(trace_id: str):
     if trace is None:
         raise HTTPException(status_code=404, detail=f"trace '{trace_id}' not found")
     return diagnose_trace(trace["data"]).to_dict()
+
+
+_DRIFT_LAB_SCENARIOS = {"retrieval_narrowing", "chunk_fragmentation"}
+
+
+def _run_drift_lab_scenario(scenario: str, n_cases: int) -> dict:
+    """Runs a real Drift Lab scenario against Sanad's live pipeline --
+    see modelwatch/experiments/drift_lab.py's own module docstring for
+    why this is the one place in modelwatch/api that imports Sanad
+    concretely. Requires Ollama serving Sanad's configured model; there
+    is no fake-LLM path, since the whole point is measuring what the
+    real model actually does under the intervention."""
+    from modelwatch.experiments import drift_lab
+    from sanad.evaluation.dataset import load_dataset
+    from sanad.rag.llm_client import OllamaClient
+
+    cases = load_dataset(drift_lab.DEFAULT_DATASET)[:n_cases]
+    llm_client = OllamaClient()
+    scenario_fn = getattr(drift_lab, scenario)
+    result = scenario_fn(cases, llm_client)
+    return {
+        "scenario": result.scenario,
+        "n_cases": result.n_cases,
+        "baseline_events": result.baseline_events,
+        "current_events": result.current_events,
+        "drift_result": result.drift_result.to_dict(),
+        "diagnosis": result.diagnosis.to_dict(),
+    }
+
+
+@app.post("/drift-lab/run", status_code=202)
+def start_drift_lab_run(scenario: str, n_cases: int = 5):
+    """Starts a Drift Lab scenario in the background -- a real run
+    against Ollama takes anywhere from under a minute to several
+    minutes (n_cases x 2 real LLM calls), so this returns a job_id
+    immediately; poll GET /drift-lab/jobs/{job_id}. See
+    modelwatch/experiments/drift_lab.py for what each scenario does."""
+    if scenario not in _DRIFT_LAB_SCENARIOS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"unknown scenario '{scenario}', expected one of {sorted(_DRIFT_LAB_SCENARIOS)}",
+        )
+    if not 1 <= n_cases <= 22:  # dataset has 22 cases total
+        raise HTTPException(status_code=400, detail="n_cases must be between 1 and 22")
+    job_id = drift_lab_jobs.submit("drift_lab", lambda: _run_drift_lab_scenario(scenario, n_cases))
+    return {"job_id": job_id}
+
+
+@app.get("/drift-lab/jobs/{job_id}")
+def get_drift_lab_job(job_id: str):
+    job = drift_lab_jobs.get(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail=f"job '{job_id}' not found")
+    return job.to_dict()
 
 
 @app.get("/config")
