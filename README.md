@@ -87,6 +87,10 @@ the full writeup:
 - **[`modelwatch-client/`](modelwatch-client/)** — a standalone,
   pip-installable client for adopting any of this in a project that
   isn't Sanad, including a LangChain callback handler
+- **[`examples/independent_rag/`](examples/independent_rag/)** — proof
+  that ModelWatch is model-agnostic, not just Sanad-shaped: a RAG
+  pipeline that has never imported anything from `sanad/`, monitored
+  through nothing but `modelwatch-client`'s public API
 
 ## Further reading
 
