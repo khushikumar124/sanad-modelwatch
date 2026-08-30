@@ -20,7 +20,7 @@ keeps working unmodified under "live_telemetry" for anything already
 registered against it. This is the adapter new RAG monitoring should
 register against going forward (see docs/drift_detection.md).
 
-Represents RAG health as four independent signals rather than collapsing
+Represents RAG health as five independent signals rather than collapsing
 everything into one opaque number (the "quality vector" from
 docs/research.md):
   - retrieval:   is the distribution of retrieval similarity scores
@@ -31,6 +31,16 @@ docs/research.md):
   - refusal:     has the refusal rate changed? (two-proportion z-test)
   - citation:    has the fraction of requested citations that were
                  actually valid changed? (two-proportion z-test)
+  - embedding:   has the *distribution* of question embedding vectors
+                 shifted (a topic/phrasing shift in what's being asked),
+                 as opposed to any single scalar summary of it? (MMD,
+                 see drift/detectors.py's embedding_drift). Requires
+                 Sanad's full-trace telemetry to be on (question
+                 embeddings ride along under that same gate); with it
+                 off, this signal reports insufficient_sample rather
+                 than being silently omitted -- consistent with every
+                 other detector's "insufficient data", not a fabricated
+                 verdict.
 """
 from __future__ import annotations
 
@@ -39,7 +49,13 @@ from typing import Any
 
 from modelwatch.config import config
 from modelwatch.core.adapter_base import DriftCheckResult, ModelAdapter, SignalResult
-from modelwatch.drift.detectors import DetectorResult, ks_test, two_proportion_ztest, wasserstein_distance
+from modelwatch.drift.detectors import (
+    DetectorResult,
+    embedding_drift,
+    ks_test,
+    two_proportion_ztest,
+    wasserstein_distance,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -57,11 +73,40 @@ def _extract(events: list[dict[str, Any]]) -> dict[str, Any]:
     return {
         "retrieval_scores": retrieval_scores,
         "generation_latency_ms": [float(e.get("generation_latency_ms") or 0.0) for e in events],
+        # One vector per event, not flattened like retrieval_scores --
+        # embedding_drift compares distributions of whole vectors, not
+        # pooled scalar components. Events recorded with full-trace
+        # telemetry off (or from before this field existed) simply have
+        # no embedding and are dropped here, not zero-filled.
+        "question_embeddings": [e["question_embedding"] for e in events if e.get("question_embedding")],
         "n_events": len(events),
         "n_grounded": sum(1 for e in events if e.get("grounded")),
         "n_citations_valid": sum(int(e.get("citations") or 0) for e in events),
         "n_citations_requested": sum(int(e.get("citations_requested") or 0) for e in events),
     }
+
+
+def _embedding_drift_signal(baseline_vectors: list, current_vectors: list) -> DetectorResult:
+    try:
+        return embedding_drift(baseline_vectors, current_vectors)
+    except ValueError as e:
+        # Mismatched embedding dimensionality (e.g. the monitored app
+        # changed its embedding model mid-operation) -- a real detector
+        # can't compare across models, but that's not a reason to crash
+        # the whole drift check over one signal.
+        logger.warning("embedding_drift signal could not be computed", extra={"error": str(e)})
+        return DetectorResult(
+            detector="embedding_drift",
+            statistic=0.0,
+            p_value=None,
+            effect_size=0.0,
+            drift_detected=False,
+            confidence=0.0,
+            insufficient_sample=True,
+            n_baseline=len(baseline_vectors),
+            n_current=len(current_vectors),
+            detail={"reason": str(e)},
+        )
 
 
 class RAGAdapter(ModelAdapter):
@@ -105,6 +150,8 @@ class RAGAdapter(ModelAdapter):
             alpha=self.alpha,
         )
 
+        embedding_test = _embedding_drift_signal(baseline["question_embeddings"], current["question_embeddings"])
+
         signals = [
             SignalResult(
                 name="retrieval",
@@ -129,6 +176,12 @@ class RAGAdapter(ModelAdapter):
                 value=citation_test.detail.get("current_rate", 0.0) if citation_test.detail else 0.0,
                 is_drifted=enough and citation_test.drift_detected,
                 detail=citation_test.to_dict(),
+            ),
+            SignalResult(
+                name="embedding",
+                value=embedding_test.effect_size,
+                is_drifted=enough and embedding_test.drift_detected and not embedding_test.insufficient_sample,
+                detail=embedding_test.to_dict(),
             ),
         ]
 

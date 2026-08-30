@@ -356,6 +356,7 @@ def chat_with_document(
         generation_latency_ms=result.generation_latency_ms,
         citations_requested=result.citations_requested,
         full_trace=trace.to_dict() if config.telemetry_full_trace else None,
+        question_embedding=vector_store.embedder.embed_one(req.question) if config.telemetry_full_trace else None,
     )
     return {**result.to_dict(), "trace": trace.to_dict()}
 

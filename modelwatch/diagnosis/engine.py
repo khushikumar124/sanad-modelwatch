@@ -2,12 +2,12 @@
 detected", but "which subsystem is most likely responsible, and why".
 
 Input is the `signals` list from a RAGAdapter DriftCheckResult (or the
-equivalent dicts from a stored run) -- four named signals: retrieval,
-generation_latency, refusal, citation_validity (see
-modelwatch/adapters/rag_adapter.py). This module never re-derives
-statistics itself; it only reads the confidence/p-value/detail each
-signal already carries and applies a fixed, documented rule set to rank
-three candidate subsystems:
+equivalent dicts from a stored run) -- named signals: retrieval,
+generation_latency, refusal, citation_validity, and (since the addition
+of embedding_drift) embedding (see modelwatch/adapters/rag_adapter.py).
+This module never re-derives statistics itself; it only reads the
+confidence/p-value/detail each signal already carries and applies a
+fixed, documented rule set to rank three candidate subsystems:
 
 * RETRIEVAL   -- the vector store / embedding / chunking layer
 * GENERATION  -- the LLM's own behavior (prompt, model weights/version)
@@ -31,6 +31,17 @@ clamped to 1.0. A subsystem hypothesis built on one weakly-confident
 signal scores low; one corroborated by two or three signals scores
 higher, and the ranking (not just the top pick) is always returned so a
 reader can see how close the runner-up was.
+
+The embedding signal is deliberately NOT yet wired into the three rules
+below -- a shift in the *distribution of what's being asked* isn't
+obviously a symptom of retrieval, generation, or operational failure the
+way the other four signals are; it can equally mean a genuine change in
+user behavior (a new feature launched, a different audience) rather than
+anything wrong with the system. Folding it into the existing causal
+rules without a documented reasoning basis would be exactly the kind of
+invented domain logic this module exists to avoid. It still appears in
+the raw signals list and drift_score/is_drifted; only subsystem
+attribution skips it, for now.
 """
 from __future__ import annotations
 

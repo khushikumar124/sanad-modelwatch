@@ -71,6 +71,15 @@ class ChatEvent:
     #: else None. See this module's docstring -- the one field here that
     #: can carry real contract text.
     full_trace: dict[str, Any] | None = None
+    #: the question's own embedding vector (same gate as full_trace: a
+    #: sentence embedding is a lossy, largely irreversible representation
+    #: of the question text, closer in spirit to the "operational facts"
+    #: above than to raw content, but it's still derived from real
+    #: contract-adjacent text so it rides along under the same tradeoff
+    #: rather than being treated as always-safe). Lets a reader detect a
+    #: shift in the *distribution* of what's being asked -- ModelWatch's
+    #: embedding_drift detector -- not just a shift in retrieval scores.
+    question_embedding: list[float] = field(default_factory=list)
 
 
 _events: deque[ChatEvent] = deque(maxlen=_MAX_EVENTS)
@@ -92,6 +101,7 @@ def record_chat(
     generation_latency_ms: float = 0.0,
     citations_requested: int = 0,
     full_trace: dict[str, Any] | None = None,
+    question_embedding: list[float] | None = None,
 ) -> None:
     trace_id = uuid.uuid4().hex
     if full_trace is not None:
@@ -114,6 +124,7 @@ def record_chat(
                 generation_latency_ms=round(generation_latency_ms, 1),
                 citations_requested=citations_requested,
                 full_trace=full_trace,
+                question_embedding=[round(float(v), 6) for v in (question_embedding or [])],
             )
         )
 

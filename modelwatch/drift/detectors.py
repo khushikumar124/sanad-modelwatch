@@ -257,6 +257,104 @@ def two_proportion_ztest(
     )
 
 
+def embedding_drift(
+    baseline: Sequence[Sequence[float]],
+    current: Sequence[Sequence[float]],
+    n_permutations: int = 200,
+    alpha: float = 0.05,
+    random_state: int | None = None,
+) -> DetectorResult:
+    """Two-sample test for whether a distribution of embedding vectors
+    has shifted, using Maximum Mean Discrepancy (MMD^2) with an RBF
+    kernel (Gretton et al., 2012) -- the standard way to compare two
+    samples of high-dimensional vectors directly, rather than reducing
+    each vector to a single scalar (e.g. a similarity score) first and
+    running ks_test/wasserstein_distance on that. Collapsing to a scalar
+    can hide a real shift: a new topic cluster of questions can leave the
+    *mean* similarity to retrieved chunks unchanged while the
+    distribution's actual shape moves completely.
+
+    Every other detector in this module has a closed-form p-value; MMD
+    doesn't, so one is estimated by permutation: pool both samples,
+    reshuffle the baseline/current labels `n_permutations` times, and
+    measure how often a random split produces an MMD^2 at least as large
+    as the one actually observed. That fraction is the p-value.
+    `effect_size` is the MMD^2 statistic itself; `drift_detected` follows
+    the permutation p-value against `alpha`, the same convention as
+    ks_test and two_proportion_ztest.
+
+    ModelWatch has no embedding model of its own (see this module's and
+    the README's notes on staying independent of whatever stack the
+    monitored app uses) -- embeddings must be pre-computed by the caller
+    and passed in as plain float sequences. Anything that produces a
+    fixed-length vector per event works; this function only ever sees
+    numbers.
+    """
+    import numpy as np
+
+    if len(baseline) < MIN_SAMPLE_SIZE or len(current) < MIN_SAMPLE_SIZE:
+        return _insufficient("embedding_drift", len(baseline), len(current))
+
+    X = np.asarray(baseline, dtype=float)
+    Y = np.asarray(current, dtype=float)
+    if X.ndim != 2 or Y.ndim != 2 or X.shape[1] != Y.shape[1]:
+        raise ValueError(
+            f"baseline and current embeddings must be equal-width 2D arrays, got shapes {X.shape} and {Y.shape}"
+        )
+
+    rng = np.random.default_rng(random_state)
+
+    def _sq_dists(a: np.ndarray, b: np.ndarray) -> np.ndarray:
+        return np.sum((a[:, None, :] - b[None, :, :]) ** 2, axis=-1)
+
+    def _mmd2(a: np.ndarray, b: np.ndarray, gamma: float) -> float:
+        def _rbf_mean_off_diagonal(sq: np.ndarray) -> float:
+            k = np.exp(-gamma * sq)
+            n = k.shape[0]
+            return (k.sum() - np.trace(k)) / (n * (n - 1))
+
+        kxx = _rbf_mean_off_diagonal(_sq_dists(a, a))
+        kyy = _rbf_mean_off_diagonal(_sq_dists(b, b))
+        kxy = np.exp(-gamma * _sq_dists(a, b)).mean()
+        return float(kxx + kyy - 2 * kxy)
+
+    combined = np.vstack([X, Y])
+    pairwise_sq = _sq_dists(combined, combined)
+    nonzero = pairwise_sq[pairwise_sq > 0]
+    # Median heuristic (Gretton et al.): a data-driven RBF bandwidth
+    # instead of a hand-tuned one, so this works across embedding models
+    # with very different native scales without per-model configuration.
+    median_sq_dist = float(np.median(nonzero)) if nonzero.size else 1.0
+    gamma = 1.0 / (2 * median_sq_dist) if median_sq_dist > 0 else 1.0
+
+    observed = _mmd2(X, Y, gamma)
+
+    m = len(X)
+    n_total = len(combined)
+    exceed_count = 0
+    for _ in range(n_permutations):
+        perm = rng.permutation(n_total)
+        if _mmd2(combined[perm[:m]], combined[perm[m:]], gamma) >= observed:
+            exceed_count += 1
+    # Add-one smoothing: the standard correction for a permutation
+    # p-value, since a p-value of exactly 0.0 from a finite number of
+    # permutations overstates the evidence -- with n_permutations trials
+    # the smallest true p-value this procedure can support is 1/(n+1).
+    p_value = (exceed_count + 1) / (n_permutations + 1)
+
+    return DetectorResult(
+        detector="embedding_drift",
+        statistic=observed,
+        p_value=p_value,
+        effect_size=observed,
+        drift_detected=bool(p_value < alpha),
+        confidence=max(0.0, min(1.0, 1.0 - p_value)),
+        n_baseline=len(baseline),
+        n_current=len(current),
+        detail={"alpha": alpha, "n_permutations": n_permutations, "kernel": "rbf", "gamma": gamma},
+    )
+
+
 def _linspace(start: float, stop: float, n: int) -> list[float]:
     if n == 1:
         return [start]
