@@ -1,0 +1,59 @@
+{
+  "n_trials": 20,
+  "n_events": 30,
+  "seed": 0,
+  "generated_at": "2026-08-30T19:22:09.992942+00:00",
+  "results": {
+    "single_threshold_refusal": {
+      "method": "single_threshold_refusal",
+      "tp": 3,
+      "fp": 0,
+      "fn": 14,
+      "tn": 3,
+      "precision": 1.0,
+      "recall": 0.17647058823529413,
+      "f1": 0.3,
+      "false_positive_rate": 0.0,
+      "recall_by_drift_type": {
+        "citation": 0.0,
+        "retrieval": 0.0,
+        "latency": 0.0,
+        "refusal": 1.0
+      }
+    },
+    "ks_retrieval_only": {
+      "method": "ks_retrieval_only",
+      "tp": 6,
+      "fp": 1,
+      "fn": 11,
+      "tn": 2,
+      "precision": 0.8571428571428571,
+      "recall": 0.35294117647058826,
+      "f1": 0.5,
+      "false_positive_rate": 0.3333333333333333,
+      "recall_by_drift_type": {
+        "citation": 0.0,
+        "retrieval": 1.0,
+        "latency": 0.0,
+        "refusal": 0.0
+      }
+    },
+    "rag_adapter_full": {
+      "method": "rag_adapter_full",
+      "tp": 17,
+      "fp": 1,
+      "fn": 0,
+      "tn": 2,
+      "precision": 0.9444444444444444,
+      "recall": 1.0,
+      "f1": 0.9714285714285714,
+      "false_positive_rate": 0.3333333333333333,
+      "recall_by_drift_type": {
+        "citation": 1.0,
+        "retrieval": 1.0,
+        "latency": 1.0,
+        "refusal": 1.0
+      }
+    }
+  }
+}
