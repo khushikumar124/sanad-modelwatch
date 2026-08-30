@@ -26,15 +26,22 @@ synthetic because measuring recall against a known label requires
 knowing the true label, which live traffic doesn't come with.
 
 **H2: multidimensional monitoring reduces false positives.**
-Not directly tested. The one benchmark run shows `rag_adapter_full`'s
-false-positive rate (0.08) is *higher* than the single-metric baselines'
-(0.00, 0.06) at matched trial composition -- running four independent
-tests instead of one increases the chance that at least one fires by
-chance on a clean batch. Alert hysteresis (`docs/drift_detection.md`)
-exists partly to counteract this in production (a single anomalous
-signal on one batch doesn't create an alert), but that mitigation itself
-hasn't been benchmarked. **H2 as stated is not supported by what's been
-measured; if anything the naive comparison points the other way**, and
+Not directly supported, though the mitigation it depends on is now
+measured. The one benchmark run shows `rag_adapter_full`'s single-check
+false-positive rate (0.08-0.10 across runs) is *higher* than the
+single-metric baselines' (0.00, 0.06) at matched trial composition --
+running four (now five, with `embedding_drift`) independent tests
+instead of one increases the chance that at least one fires by chance on
+a clean batch. `scripts/calibrate_hysteresis.py` closes part of that gap
+with a real number rather than a guess: at a measured single-check FPR
+of 0.0976 (n=200 synthetic trials), the smallest hysteresis threshold
+(`MODELWATCH_DEGRADED_AFTER_CONSECUTIVE`) that brings the estimated
+*incident-level* FPR at or below 0.01 is **k=2**, achieving 0.0095 --
+under the independence assumption documented in
+`modelwatch/core/calibration.py`, which this run does not verify (see
+next steps). **H2 as originally stated (single-check FPR) is still not
+supported by what's been measured; the calibrated-hysteresis result is
+evidence in H2's favor at the incident level, not proof of it**, and
 resolving that tension (hysteresis-adjusted FPR vs. single-shot FPR)
 would be a real next step, not something to paper over.
 
@@ -75,9 +82,17 @@ synthetic sequential traffic.
    batches with drift introduced at a known point, measure how many
    batches (or how much wall-clock time under realistic traffic) each
    method/threshold setting takes to raise an alert.
-2. **Hysteresis-adjusted FPR**: rerun the benchmark's false-positive
-   comparison with `MODELWATCH_DEGRADED_AFTER_CONSECUTIVE=2` or higher,
-   to see whether hysteresis actually closes the FPR gap noted under H2.
+2. ~~**Hysteresis-adjusted FPR**~~ -- partly done, see H2 above and
+   `scripts/calibrate_hysteresis.py`: calibrating
+   `MODELWATCH_DEGRADED_AFTER_CONSECUTIVE=2` from a real measured
+   single-check FPR (0.0976) brings the *estimated* incident-level FPR to
+   0.0095, near the single-metric baselines. What's still open: this
+   relies on an independence assumption between consecutive checks that
+   hasn't been verified against a real sequential stream (correlated
+   checks -- e.g. one slow-burning issue degrading several checks in a
+   row -- would make the true incident-level FPR higher than the formula
+   predicts). Verifying that independence assumption directly is now the
+   more precise version of this next step.
 3. **Human-annotated retrieval ground truth**: replace or supplement
    `datasets/sanad_eval/`'s auto-derived `relevant_chunks` with a
    human-reviewed pass, and re-measure `retrieval_hit_rate` /
