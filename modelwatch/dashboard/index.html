@@ -269,6 +269,10 @@
     <a class="nav-item active" data-page="overview">Overview</a>
   </div>
   <div class="group">
+    <div class="group-label">Systems</div>
+    <a class="nav-item" data-page="connect">Connect Your Model</a>
+  </div>
+  <div class="group">
     <div class="group-label">Monitoring</div>
     <a class="nav-item" data-page="monitoring">Live Traffic &amp; Drift</a>
     <a class="nav-item" data-page="statistics">Statistical Analysis</a>
@@ -324,6 +328,90 @@
     <div class="panel">
       <h2>Quality &amp; drift over time <span class="note" id="chartNote"></span></h2>
       <canvas id="chart" height="86"></canvas>
+    </div>
+  </section>
+
+  <section class="page" data-page="connect">
+    <div class="page-head">
+      <h1>Connect Your Model</h1>
+      <div class="sub">
+        <b>Demo mode</b> (what "Sanad Chatbot (live traffic)" in the model picker is): Sanad's own telemetry,
+        forwarded by <code>modelwatch/examples/telemetry_reporter.py</code>. <b>Integration mode</b> (this page):
+        any application, talking to ModelWatch through nothing but the public REST API / SDK below.
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>Connection status <span class="note">real count from GET /models</span></h2>
+      <div id="connectStatus"><div class="empty">Loading…</div></div>
+    </div>
+
+    <div class="panel">
+      <h2>1. Install</h2>
+      <div class="explain"><pre style="white-space:pre-wrap;font-family:var(--mono);font-size:11.5px;color:var(--text-2);">pip install -e ./modelwatch-client
+# or, from another project: pip install -e /path/to/sanad-modelwatch/modelwatch-client</pre></div>
+    </div>
+
+    <div class="panel">
+      <h2>2. Pick the adapter that matches your system</h2>
+      <div class="explain">
+        <p>ModelWatch ships three adapters today. A pipeline that doesn't cleanly match one of these (e.g. a
+        generic tabular regressor, or a non-RAG generative pipeline) needs a new adapter written server-side
+        implementing <code>build_baseline</code>/<code>check_drift</code> -- see
+        <code>modelwatch/core/adapter_base.py</code>. That's a real gap, not hidden: there is no fully generic
+        "custom" adapter in this codebase yet.</p>
+      </div>
+      <div class="item">
+        <div class="n">RAG pipeline &rarr; adapter_name="rag"</div>
+        <div style="margin-top:6px;color:var(--text-2);">Telemetry schema per check (one dict per request):</div>
+        <pre>{
+  "grounded": bool,
+  "citations": int,               # valid citations actually used
+  "citations_requested": int,     # citation numbers the model named
+  "retrieval_scores": [float],    # similarity/distance per retrieved chunk
+  "generation_latency_ms": float,
+  "question_embedding": [float]   # optional -- enables the embedding-drift signal
+}</pre>
+      </div>
+      <div class="item">
+        <div class="n">LLM app (golden question/answer set) &rarr; adapter_name="llm"</div>
+        <div style="margin-top:6px;color:var(--text-2);">Baseline: <code>[{"prompt", "expected_answer"}, ...]</code>. Check: <code>[{"prompt", "actual_answer"}, ...]</code>, matched by exact prompt.</div>
+      </div>
+      <div class="item">
+        <div class="n">Tabular classifier &rarr; adapter_name="classifier"</div>
+        <div style="margin-top:6px;color:var(--text-2);">Baseline and check: <code>{"features": {feature_name: [values, ...]}}</code> -- same feature names in both.</div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>3. Register a baseline and start checking</h2>
+      <div class="explain"><pre style="white-space:pre-wrap;font-family:var(--mono);font-size:11.5px;color:var(--text-2);">from modelwatch_client import ModelWatchClient
+
+client = ModelWatchClient(base_url="http://localhost:8000")
+
+client.register_model(
+    model_id="my-rag-app",
+    name="My RAG App",
+    adapter_name="rag",
+    baseline_data=baseline_events,   # a list of events in the schema above,
+)                                     # drawn from known-normal traffic
+
+result = client.check("my-rag-app", current_events)
+print(result["is_drifted"], result["drift_score"], result["signals"])</pre></div>
+      <div class="explain" style="margin-top:10px;">
+        <p>A complete, runnable, non-Sanad version of exactly this is in
+        <code>examples/independent_rag/</code> -- including a real TF-IDF pipeline, a real induced drift
+        scenario, and the actual output. For recording full per-request traces (so requests show up in the
+        AI Debugger), see <code>client.record_trace()</code>; for a LangChain pipeline specifically, see
+        <code>modelwatch_client.integrations.langchain.ModelWatchCallbackHandler</code>.</p>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>4. Monitor it</h2>
+      <div class="explain"><p>Once registered, your model appears in the picker at the top of this dashboard
+        like any other -- Overview, Live Traffic &amp; Drift, and (if you call <code>record_trace</code>) AI
+        Debugger all work identically regardless of what produced the telemetry.</p></div>
     </div>
   </section>
 
@@ -1192,8 +1280,29 @@ document.querySelectorAll(".nav-item").forEach(item => {
     if (page === "registry") { loadRegistry(); loadVersions(); }
     if (page === "statistics") loadStatisticsPage();
     if (page === "learn") renderLearnPage();
+    if (page === "connect") loadConnectStatus();
   });
 });
+
+/* ---------------- connect your model ---------------- */
+async function loadConnectStatus() {
+  const box = document.getElementById("connectStatus");
+  try {
+    const models = await get("/models");
+    const demoAdapters = new Set(["live_telemetry"]);
+    const integrationModels = models.filter(m => !demoAdapters.has(m.adapter_name));
+    box.innerHTML = `<div class="tiles" style="margin-bottom:0;">
+      <div class="tile"><div class="k">Total registered models</div><div class="v neutral">${models.length}</div></div>
+      <div class="tile"><div class="k">Non-demo (integration-mode) models</div><div class="v ${integrationModels.length ? "ok" : "neutral"}">${integrationModels.length}</div></div>
+    </div>` + (integrationModels.length
+      ? '<div style="margin-top:10px;color:var(--text-2);font-size:11.5px;">' +
+        integrationModels.map(m => esc(`${m.name} (${m.model_id}) -- adapter: ${m.adapter_name}`)).join("<br>") +
+        '</div>'
+      : '<div class="empty" style="margin-top:10px;">No integration-mode models registered yet -- try running examples/independent_rag/run_example.py.</div>');
+  } catch (e) {
+    box.innerHTML = '<div class="empty">' + esc(e.message) + '</div>';
+  }
+}
 
 /* ---------------- statistical analysis ---------------- */
 const DETECTOR_REFERENCE = [
