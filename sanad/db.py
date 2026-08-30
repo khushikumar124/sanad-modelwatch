@@ -71,6 +71,20 @@ documents_table = Table(
     Column("owner", String, nullable=True),
 )
 
+comments_table = Table(
+    "comments",
+    metadata,
+    Column("comment_id", String, primary_key=True),
+    Column("doc_id", String, nullable=False),
+    Column("chunk_index", Integer, nullable=False),
+    #: username, or "" when auth is off -- an anonymous comment stays
+    #: meaningful (still attributable to nobody in particular is honest,
+    #: not broken) rather than being rejected outright.
+    Column("author", String, nullable=False),
+    Column("text", Text, nullable=False),
+    Column("created_at", String, nullable=False),
+)
+
 
 @dataclass
 class DocumentRecord:
@@ -121,6 +135,27 @@ class DocumentRecord:
             source_path=ingested.source_path,
             owner=owner,
         )
+
+
+@dataclass
+class Comment:
+    """A comment on one clause of one document -- the collaboration
+    primitive this app has: a team sharing access to a document (the
+    owner plus anyone SANAD_ADMIN_USERS lists as an admin, today's whole
+    access model) can discuss a specific clause without leaving the app.
+    Deliberately NOT real-time collaborative editing or redlining --
+    that needs a much bigger data model (suggested edits, accept/reject,
+    conflict resolution) this project doesn't have."""
+
+    comment_id: str
+    doc_id: str
+    chunk_index: int
+    author: str
+    text: str
+    created_at: str
+
+    def to_dict(self) -> dict:
+        return asdict(self)
 
 
 _engine: Engine | None = None
@@ -197,3 +232,38 @@ def list_documents() -> list[DocumentRecord]:
 def delete_document(doc_id: str) -> None:
     with get_engine().begin() as conn:
         conn.execute(delete(documents_table).where(documents_table.c.doc_id == doc_id))
+        # Comments on a deleted document are meaningless clutter, not
+        # history worth keeping -- there's nothing left for them to
+        # annotate.
+        conn.execute(delete(comments_table).where(comments_table.c.doc_id == doc_id))
+
+
+def _row_to_comment(row) -> Comment:
+    return Comment(
+        comment_id=row.comment_id, doc_id=row.doc_id, chunk_index=row.chunk_index,
+        author=row.author, text=row.text, created_at=row.created_at,
+    )
+
+
+def add_comment(comment: Comment) -> None:
+    with get_engine().begin() as conn:
+        conn.execute(insert(comments_table).values(**asdict(comment)))
+
+
+def get_comment(comment_id: str) -> Comment | None:
+    with get_engine().connect() as conn:
+        row = conn.execute(select(comments_table).where(comments_table.c.comment_id == comment_id)).first()
+        return _row_to_comment(row) if row else None
+
+
+def list_comments(doc_id: str) -> list[Comment]:
+    with get_engine().connect() as conn:
+        rows = conn.execute(
+            select(comments_table).where(comments_table.c.doc_id == doc_id).order_by(comments_table.c.created_at)
+        ).all()
+        return [_row_to_comment(r) for r in rows]
+
+
+def delete_comment(comment_id: str) -> None:
+    with get_engine().begin() as conn:
+        conn.execute(delete(comments_table).where(comments_table.c.comment_id == comment_id))

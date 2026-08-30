@@ -277,6 +277,23 @@
     30% { background: var(--accent-wash); border-color: var(--accent); }
   }
   .clause-flash { animation: clauseFlash 2s ease; }
+  .clause-comments { margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--line-soft); }
+  .comment {
+    display: flex; align-items: baseline; gap: 8px; font-size: 12.5px;
+    padding: 6px 0; color: var(--ink-soft);
+  }
+  .comment-author { font-weight: 620; color: var(--ink); flex-shrink: 0; }
+  .comment-text { flex: 1; }
+  .comment-delete {
+    background: none; border: none; color: var(--muted); cursor: pointer;
+    font-size: 15px; line-height: 1; padding: 0 4px;
+  }
+  .comment-delete:hover { color: var(--accent); }
+  .comment-add { margin-top: 6px; }
+  .comment-input {
+    width: 100%; font-size: 12.5px; padding: 6px 10px; border: 1px solid var(--line-soft);
+    border-radius: var(--r); background: var(--surface-2); color: var(--ink);
+  }
 
   /* ---------- risk heatmap ---------- */
   .heatmap { margin-bottom: 18px; }
@@ -1058,28 +1075,51 @@ function renderReview(data) {
 
 /* ---------------- document (click-to-source target) ---------------- */
 const documentCache = {};   // doc_id -> clauses[]
+let documentComments = [];  // comments for the currently loaded document
 
 async function loadDocument(id, jumpToClause) {
   const body = document.getElementById("documentBody");
-  if (documentCache[id]) {
-    renderDocument(documentCache[id], jumpToClause);
-    return;
-  }
   body.innerHTML = '<div class="skel"><div style="width:30%"></div><div style="width:95%"></div><div style="width:88%"></div><div style="width:92%"></div></div>';
   try {
-    const { clauses } = await api("/documents/" + id + "/clauses");
+    const [{ clauses }, { comments }] = await Promise.all([
+      documentCache[id] ? Promise.resolve({ clauses: documentCache[id] }) : api("/documents/" + id + "/clauses"),
+      api("/documents/" + id + "/comments"),
+    ]);
     documentCache[id] = clauses;
+    documentComments = comments;
     if (currentId === id) renderDocument(clauses, jumpToClause);
   } catch (e) { body.innerHTML = '<p class="none">' + esc(e.message) + '</p>'; }
 }
 
 function renderDocument(clauses, jumpToClause) {
   const body = document.getElementById("documentBody");
-  body.innerHTML = clauses.map(c => `
+  const commentsFor = idx => documentComments.filter(c => c.chunk_index === idx);
+  body.innerHTML = clauses.map(c => {
+    const cs = commentsFor(c.index);
+    return `
     <div class="clause" id="clause-${c.index}">
       ${c.heading ? '<div class="clause-heading">' + esc(c.heading) + '</div>' : ""}
       <div class="clause-text">${esc(c.text)}</div>
-    </div>`).join("");
+      <div class="clause-comments">
+        ${cs.map(cm => `
+          <div class="comment" data-comment-id="${cm.comment_id}">
+            <span class="comment-author">${esc(cm.author || "anonymous")}</span>
+            <span class="comment-text">${esc(cm.text)}</span>
+            <button class="comment-delete" data-comment-id="${cm.comment_id}" title="Delete comment">&times;</button>
+          </div>`).join("")}
+        <div class="comment-add">
+          <input type="text" class="comment-input" data-clause-index="${c.index}" placeholder="Add a comment on this clause…" />
+        </div>
+      </div>
+    </div>`;
+  }).join("");
+
+  body.querySelectorAll(".comment-input").forEach(input => {
+    input.addEventListener("keydown", e => { if (e.key === "Enter") addComment(input); });
+  });
+  body.querySelectorAll(".comment-delete").forEach(btn => {
+    btn.addEventListener("click", () => removeComment(btn.dataset.commentId));
+  });
 
   if (jumpToClause !== null && jumpToClause !== undefined) {
     const target = document.getElementById("clause-" + jumpToClause);
@@ -1093,6 +1133,27 @@ function renderDocument(clauses, jumpToClause) {
       });
     }
   }
+}
+
+async function addComment(input) {
+  const text = input.value.trim();
+  if (!text || !currentId) return;
+  const chunkIndex = parseInt(input.dataset.clauseIndex, 10);
+  try {
+    await api("/documents/" + currentId + "/comments", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chunk_index: chunkIndex, text }),
+    });
+    loadDocument(currentId);
+  } catch (e) { alert(e.message); }
+}
+
+async function removeComment(commentId) {
+  if (!currentId) return;
+  try {
+    await api("/documents/" + currentId + "/comments/" + commentId, { method: "DELETE" });
+    loadDocument(currentId);
+  } catch (e) { alert(e.message); }
 }
 
 /* ---------------- summary ---------------- */

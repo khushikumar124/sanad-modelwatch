@@ -29,6 +29,24 @@ class ChatRequest(BaseModel):
     question: str
 
 
+class CommentRequest(BaseModel):
+    chunk_index: int
+    text: str
+
+
+class CommentResponse(BaseModel):
+    comment_id: str
+    doc_id: str
+    chunk_index: int
+    author: str
+    text: str
+    created_at: str
+
+
+class CommentsResponse(BaseModel):
+    comments: list[CommentResponse]
+
+
 class CrossChatRequest(BaseModel):
     doc_ids: list[str]
     question: str

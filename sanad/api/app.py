@@ -14,6 +14,7 @@ from __future__ import annotations
 import logging
 import time
 import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, Response, UploadFile
@@ -28,6 +29,9 @@ from sanad.api.schemas import (
     ChatRequest,
     ChatResponse,
     ClausesResponse,
+    CommentRequest,
+    CommentResponse,
+    CommentsResponse,
     ComparisonResponse,
     CoverageResponse,
     CrossChatRequest,
@@ -240,6 +244,56 @@ def get_clauses(doc_id: str, _user: str | None = Depends(require_user)):
     record = _get_record(doc_id, _user)
     chunks = chunk_document(record.text)
     return {"clauses": [{"index": c.index, "heading": c.heading, "text": c.text} for c in chunks]}
+
+
+@app.get("/api/documents/{doc_id}/comments", response_model=CommentsResponse)
+def get_comments(doc_id: str, _user: str | None = Depends(require_user)):
+    """Comments on this document's clauses -- the collaboration
+    primitive this app has, see db.py's Comment docstring for what it
+    deliberately isn't (real-time editing, redlining)."""
+    _get_record(doc_id, _user)  # 404 if the caller can't access the document itself
+    return {"comments": [c.to_dict() for c in db.list_comments(doc_id)]}
+
+
+@app.post("/api/documents/{doc_id}/comments", response_model=CommentResponse, status_code=201)
+def add_comment(doc_id: str, req: CommentRequest, _user: str | None = Depends(require_user)):
+    record = _get_record(doc_id, _user)
+    chunks = chunk_document(record.text)
+    if not any(c.index == req.chunk_index for c in chunks):
+        raise HTTPException(status_code=400, detail=f"document has no clause at index {req.chunk_index}")
+    if not req.text.strip():
+        raise HTTPException(status_code=400, detail="comment text must not be empty")
+
+    comment = db.Comment(
+        comment_id=str(uuid.uuid4()),
+        doc_id=doc_id,
+        chunk_index=req.chunk_index,
+        author=_user or "",
+        text=req.text.strip(),
+        created_at=datetime.now(timezone.utc).isoformat(),
+    )
+    db.add_comment(comment)
+    return comment.to_dict()
+
+
+@app.delete("/api/documents/{doc_id}/comments/{comment_id}", status_code=204)
+def delete_comment(doc_id: str, comment_id: str, _user: str | None = Depends(require_user)):
+    record = _get_record(doc_id, _user)
+    comment = db.get_comment(comment_id)
+    if comment is None or comment.doc_id != doc_id:
+        raise HTTPException(status_code=404, detail=f"comment '{comment_id}' not found")
+    # A comment can be removed by whoever wrote it, the document's owner
+    # (moderating their own document), or an admin -- not by an arbitrary
+    # other user who merely has access to a shared/legacy document.
+    can_delete = (
+        not config.auth_enabled
+        or comment.author == _user
+        or record.owner == _user
+        or is_admin(_user)
+    )
+    if not can_delete:
+        raise HTTPException(status_code=403, detail="only the comment's author or the document owner can delete it")
+    db.delete_comment(comment_id)
 
 
 @app.get("/api/documents/{doc_id}/coverage", response_model=CoverageResponse)
