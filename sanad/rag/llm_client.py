@@ -29,7 +29,11 @@ class LLMConnectionError(Exception):
 class LLMClient(ABC):
     @abstractmethod
     def generate(
-        self, system_prompt: str, user_prompt: str, response_schema: dict | None = None
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        response_schema: dict | None = None,
+        timeout: float = 180,
     ) -> str:
         """Run one system+user prompt through the model and return its
         text response.
@@ -37,6 +41,14 @@ class LLMClient(ABC):
         response_schema, when given, is a JSON Schema the backend should
         constrain output to. Backends that can't enforce it may ignore it
         -- callers must still parse defensively.
+
+        timeout is in seconds. A caller sending the whole document (e.g.
+        summarizer.py, obligations.py) with an array-shaped response_schema
+        should raise this well above the default: schema-constrained
+        decoding of an array of objects with an enum field is measurably
+        slower on a small CPU-bound model than a flat-object schema, and
+        180s was observed to be too short for obligation extraction on a
+        real rental contract with phi3:3.8b (see obligations.py's caller).
         """
         raise NotImplementedError
 
@@ -57,7 +69,11 @@ class OllamaClient(LLMClient):
         self.num_ctx = num_ctx
 
     def generate(
-        self, system_prompt: str, user_prompt: str, response_schema: dict | None = None
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        response_schema: dict | None = None,
+        timeout: float = 180,
     ) -> str:
         payload: dict = {
             "model": self.model,
@@ -78,11 +94,16 @@ class OllamaClient(LLMClient):
             payload["format"] = response_schema
 
         try:
-            response = requests.post(f"{self.base_url}/api/chat", json=payload, timeout=180)
+            response = requests.post(f"{self.base_url}/api/chat", json=payload, timeout=timeout)
             response.raise_for_status()
         except requests.exceptions.ConnectionError as e:
             raise LLMConnectionError(
                 f"could not reach Ollama at {self.base_url} -- is `ollama serve` running?"
+            ) from e
+        except requests.exceptions.Timeout as e:
+            raise LLMConnectionError(
+                f"Ollama at {self.base_url} did not respond within {timeout:.0f}s -- "
+                f"'{self.model}' may be too slow on this machine for a request this size"
             ) from e
         except requests.exceptions.HTTPError as e:
             # Ollama is up but rejected the request. The common case by far is

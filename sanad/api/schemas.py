@@ -53,6 +53,30 @@ class RiskResponse(BaseModel):
     counts: dict[str, int]
 
 
+class ObligationsResponse(BaseModel):
+    obligations: list[dict[str, Any]]
+    parse_error: bool
+    grounded_count: int
+    total_count: int
+
+
+class CoverageResponse(BaseModel):
+    results: list[dict[str, Any]]
+    not_found_count: int
+
+
+class ReviewResponse(BaseModel):
+    top_issues: list[dict[str, Any]]
+    negotiable_clauses: list[dict[str, Any]]
+    questions_to_ask: list[str]
+    clarification_areas: list[str]
+    #: the obligations extracted along the way (review needs them
+    #: internally for contradiction detection) -- included so the
+    #: frontend doesn't have to make a second, duplicate extraction
+    #: call just to show the obligations table.
+    obligations: dict[str, Any]
+
+
 class ComparisonResponse(BaseModel):
     counts_a: dict[str, int]
     counts_b: dict[str, int]

@@ -45,7 +45,7 @@ CASES = [
 
 
 class FixedLLMClient(LLMClient):
-    def generate(self, system_prompt: str, user_prompt: str, response_schema: dict | None = None) -> str:
+    def generate(self, system_prompt: str, user_prompt: str, response_schema: dict | None = None, timeout: float = 180) -> str:
         return json.dumps({"grounded": True, "answer": "A fixed answer.", "cited_excerpts": [1]})
 
 

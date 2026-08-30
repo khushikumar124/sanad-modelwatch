@@ -254,6 +254,16 @@
     border-radius: var(--r-sm); padding: 12px 14px;
   }
 
+  /* ---------- review tables ---------- */
+  table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  th {
+    text-align: left; padding: 8px 10px; color: var(--muted); font-weight: 600;
+    font-size: 10.5px; text-transform: uppercase; letter-spacing: .06em;
+    border-bottom: 1px solid var(--line); white-space: nowrap;
+  }
+  td { padding: 9px 10px; border-bottom: 1px solid var(--line-soft); vertical-align: top; color: var(--ink-soft); }
+  tbody tr:hover { background: var(--surface-2); }
+
   /* ---------- summary ---------- */
   .sum-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 13px; }
   .sum-card {
@@ -509,6 +519,7 @@
           <button class="tab" data-pane="summary">Summary</button>
           <button class="tab" data-pane="ask">Ask</button>
           <button class="tab" data-pane="compare">Compare</button>
+          <button class="tab" data-pane="review">Review</button>
           <span style="flex:1"></span>
           <button class="linkish" id="deleteBtn" title="Remove this document">Remove</button>
         </div>
@@ -534,6 +545,7 @@
             <div id="compareBody"></div>
           </div>
         </div>
+        <div class="pane" id="pane-review" hidden><div class="wrap" id="reviewBody"></div></div>
       </div>
     </main>
   </div>
@@ -706,7 +718,7 @@ async function upload(file) {
 /* ---------------- tabs ---------------- */
 function showTab(name) {
   document.querySelectorAll(".tab").forEach(t => t.classList.toggle("active", t.dataset.pane === name));
-  ["risks", "summary", "ask", "compare"].forEach(p => {
+  ["risks", "summary", "ask", "compare", "review"].forEach(p => {
     document.getElementById("pane-" + p).hidden = p !== name;
   });
   // Retrigger the entrance animation on the pane we just revealed --
@@ -718,6 +730,7 @@ function showTab(name) {
   shown.classList.add("pane-fade");
   if (name === "ask") setTimeout(() => document.getElementById("chatInput").focus(), 30);
   if (name === "compare") renderCompareSelect();
+  if (name === "review") loadReview(currentId);
 }
 
 /* ---------------- risks ---------------- */
@@ -818,6 +831,89 @@ function renderComparison(c) {
     : section("Only in this contract", c.only_in_a, "a") +
       section("Only in the other contract", c.only_in_b, "b") +
       section("In both contracts", c.shared, "shared"));
+}
+
+/* ---------------- review ---------------- */
+const reviewCache = {};   // doc_id -> {review, obligations, coverage}
+
+async function loadReview(id) {
+  const body = document.getElementById("reviewBody");
+  if (reviewCache[id]) return renderReview(reviewCache[id]);
+  body.innerHTML = '<div class="skel"><div style="width:40%"></div><div style="width:90%"></div><div style="width:70%"></div></div>' +
+    '<div class="fineprint" style="margin-top:10px;">Extracting obligations and checking clause coverage — this calls the model once, so it can take a little while.</div>';
+  try {
+    // /review already runs obligation extraction internally (it needs
+    // the obligations to check for contradictions) and returns them --
+    // fetching /obligations separately here would run that same slow
+    // LLM call a second time for no reason.
+    const [review, coverage] = await Promise.all([
+      api("/documents/" + id + "/review"),
+      api("/documents/" + id + "/coverage"),
+    ]);
+    const data = { review, obligations: review.obligations, coverage };
+    reviewCache[id] = data;
+    if (currentId === id) renderReview(data);
+  } catch (e) { body.innerHTML = '<p class="none">' + esc(e.message) + '</p>'; }
+}
+
+function renderReview(data) {
+  const { review, obligations, coverage } = data;
+  const body = document.getElementById("reviewBody");
+
+  const issueCard = i => '<div class="risk ' + i.severity + '">' +
+    '<div class="risk-top"><span class="risk-title">' + esc(i.title) + '</span>' +
+    '<span class="sev-tag ' + i.severity + '">' + i.severity + '</span></div>' +
+    '<div class="risk-why">' + esc(i.detail) + '</div></div>';
+
+  const topIssues = review.top_issues.length
+    ? review.top_issues.map(issueCard).join("")
+    : '<div class="disclaimer">No high-severity issues, contradictions, or missing high-importance clauses found.</div>';
+
+  const questions = review.questions_to_ask.length
+    ? '<ul style="margin:0;padding-left:19px;">' + review.questions_to_ask.map(q => '<li style="margin-bottom:7px;">' + esc(q) + '</li>').join("") + '</ul>'
+    : '<p class="none">No templated questions for the issues found.</p>';
+
+  const clarifications = review.clarification_areas.length
+    ? '<ul style="margin:0;padding-left:19px;">' + review.clarification_areas.map(c => '<li style="margin-bottom:7px;">' + esc(c) + '</li>').join("") + '</ul>'
+    : '<p class="none">No coverage gaps to flag.</p>';
+
+  const obligationRows = obligations.obligations.length
+    ? obligations.obligations.map(o => '<tr' + (o.grounded ? "" : ' style="opacity:.55;"') + '>' +
+        '<td>' + esc(o.party) + '</td>' +
+        '<td>' + esc(o.obligation) + '</td>' +
+        '<td>' + esc(o.deadline || "—") + '</td>' +
+        '<td><span class="pill">' + esc(o.category) + '</span></td>' +
+        '<td>' + (o.grounded ? '<span class="pill good">verified</span>' : '<span class="pill warn" title="Could not find this exact wording in the document">unverified</span>') + '</td>' +
+      '</tr>').join("")
+    : '<tr><td colspan="5" class="none">No obligations extracted.</td></tr>';
+
+  const coverageRows = coverage.results.map(r => '<div class="scanline" style="margin-bottom:6px;">' +
+    '<span class="pill ' + (r.status === "found" ? "good" : (r.importance === "high" ? "warn" : "")) + '">' +
+    esc(r.label) + ': ' + (r.status === "found" ? "found" : "not found") + '</span></div>').join("");
+
+  body.innerHTML = `
+    <h3 style="font-family:var(--serif);font-size:18px;margin:0 0 4px;">Top issues to review</h3>
+    <div style="margin-bottom:20px;">${topIssues}</div>
+
+    <h3 style="font-family:var(--serif);font-size:18px;margin:0 0 8px;">Questions worth asking the other party</h3>
+    <div style="margin-bottom:20px;">${questions}</div>
+
+    <h3 style="font-family:var(--serif);font-size:18px;margin:0 0 8px;">Areas to clarify</h3>
+    <div style="margin-bottom:20px;">${clarifications}</div>
+
+    <h3 style="font-family:var(--serif);font-size:18px;margin:0 0 8px;">Obligations &amp; important dates</h3>
+    <div style="overflow-x:auto;margin-bottom:20px;">
+      <table>
+        <thead><tr><th>Party</th><th>Obligation</th><th>Deadline</th><th>Category</th><th>Grounding</th></tr></thead>
+        <tbody>${obligationRows}</tbody>
+      </table>
+    </div>
+    <div class="disclaimer">Obligations are extracted by the model, not a fixed rule set -- each is checked against the document's own wording and marked "unverified" when that check fails, rather than being silently dropped or trusted blindly.</div>
+
+    <h3 style="font-family:var(--serif);font-size:18px;margin:20px 0 8px;">Clause coverage</h3>
+    <div>${coverageRows}</div>
+    <div class="disclaimer">"Not found" means this scan's patterns didn't match anything -- it is not proof the contract lacks that protection, only that it's worth checking yourself.</div>
+  `;
 }
 
 /* ---------------- summary ---------------- */

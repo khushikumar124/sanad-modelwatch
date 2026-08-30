@@ -78,6 +78,9 @@ adapter file plus one registry line
 
 ## Documents
 
+- [contract_intelligence.md](contract_intelligence.md) -- obligation/deadline
+  extraction, missing-clause detection, contradiction detection, and the
+  Review synthesis
 - [rag_trace.md](rag_trace.md) -- making the AI visible: retrieval inspector,
   claim verification, the RAG X-Ray, and per-request diagnosis
 - [telemetry.md](telemetry.md) -- the structured per-request event schema

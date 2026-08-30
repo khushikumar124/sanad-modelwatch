@@ -154,6 +154,77 @@ def test_chat_returns_503_when_llm_unreachable(uploaded_doc_id, llm_unreachable)
     assert "ollama" in res.json()["detail"].lower()
 
 
+def test_obligations_returns_503_when_llm_unreachable(uploaded_doc_id, llm_unreachable):
+    res = client.get(f"/api/documents/{uploaded_doc_id}/obligations")
+    assert res.status_code == 503
+    assert "ollama" in res.json()["detail"].lower()
+
+
+def test_review_returns_503_when_llm_unreachable(uploaded_doc_id, llm_unreachable):
+    """review needs obligation extraction internally, so it should fail
+    the same way summarize/chat/obligations do when the LLM is down."""
+    res = client.get(f"/api/documents/{uploaded_doc_id}/review")
+    assert res.status_code == 503
+    assert "ollama" in res.json()["detail"].lower()
+
+
+def test_obligations_unknown_document_returns_404():
+    res = client.get("/api/documents/does-not-exist/obligations")
+    assert res.status_code == 404
+
+
+@pytest.fixture
+def fake_llm_response():
+    """Points the app's LLM client at a scripted response, so /review's
+    success path (which needs real JSON back from obligation extraction)
+    can be tested without Ollama."""
+    from sanad.api import app as app_module
+
+    class FakeClient:
+        model = "fake-model"
+
+        def generate(self, system_prompt, user_prompt, response_schema=None, timeout=180):
+            return '{"obligations": []}'
+
+    original = app_module.llm_client
+    app_module.llm_client = FakeClient()
+    yield
+    app_module.llm_client = original
+
+
+def test_review_response_includes_obligations_without_a_second_llm_call(uploaded_doc_id, fake_llm_response):
+    """Regression test: the frontend used to fetch /review and
+    /obligations in parallel, running the slow obligation-extraction LLM
+    call twice per page load. /review must carry the obligations it
+    already extracted internally so a second call is never needed."""
+    res = client.get(f"/api/documents/{uploaded_doc_id}/review")
+    assert res.status_code == 200
+    body = res.json()
+    assert "obligations" in body
+    assert "obligations" in body["obligations"]  # ObligationsResponse shape nested under the key
+
+
+def test_review_unknown_document_returns_404():
+    res = client.get("/api/documents/does-not-exist/review")
+    assert res.status_code == 404
+
+
+def test_coverage_endpoint_returns_a_report(uploaded_doc_id):
+    """No LLM dependency, so this can run for real against the uploaded
+    rental contract, no mocking needed."""
+    res = client.get(f"/api/documents/{uploaded_doc_id}/coverage")
+    assert res.status_code == 200
+    body = res.json()
+    assert "results" in body and "not_found_count" in body
+    found_ids = {r["category_id"] for r in body["results"] if r["status"] == "found"}
+    assert "payment" in found_ids
+
+
+def test_coverage_unknown_document_returns_404():
+    res = client.get("/api/documents/does-not-exist/coverage")
+    assert res.status_code == 404
+
+
 def test_admin_can_swap_active_model():
     original = client.get("/api/admin/model").json()["model"]
 

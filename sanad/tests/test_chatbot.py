@@ -21,13 +21,13 @@ class FakeLLMClient(LLMClient):
         self.response = response
         self.called = False
 
-    def generate(self, system_prompt: str, user_prompt: str, response_schema: dict | None = None) -> str:
+    def generate(self, system_prompt: str, user_prompt: str, response_schema: dict | None = None, timeout: float = 180) -> str:
         self.called = True
         return self.response
 
 
 class NeverCalledLLMClient(LLMClient):
-    def generate(self, system_prompt: str, user_prompt: str, response_schema: dict | None = None) -> str:
+    def generate(self, system_prompt: str, user_prompt: str, response_schema: dict | None = None, timeout: float = 180) -> str:
         raise AssertionError("LLM should not be called when there is no retrieved context")
 
 

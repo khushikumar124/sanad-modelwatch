@@ -19,7 +19,7 @@ class ScriptedLLMClient(LLMClient):
     def __init__(self, response: str):
         self.response = response
 
-    def generate(self, system_prompt: str, user_prompt: str, response_schema: dict | None = None) -> str:
+    def generate(self, system_prompt: str, user_prompt: str, response_schema: dict | None = None, timeout: float = 180) -> str:
         return self.response
 
 

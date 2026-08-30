@@ -6,7 +6,10 @@ and silently passed only on machines where Ollama wasn't installed, then
 broke the moment it was. Test outcomes shouldn't depend on whether an
 optional service happens to be running.
 """
+import time
+
 import pytest
+from werkzeug.wrappers import Response
 
 from sanad.rag.llm_client import LLMConnectionError, OllamaClient
 
@@ -49,3 +52,23 @@ def test_returns_content_on_success(httpserver):
     client = OllamaClient(base_url=httpserver.url_for(""))
 
     assert client.generate("system", "user") == "hello from the model"
+
+
+def test_raises_clear_error_on_timeout_instead_of_an_unhandled_exception(httpserver):
+    """Regression test: a slow response (e.g. array-of-objects schema
+    extraction on a full document, see obligations.py) previously
+    propagated as a raw requests.exceptions.ReadTimeout all the way to
+    the API layer, surfacing as an opaque 500 instead of the clean 503
+    every other LLM-unavailable path produces."""
+    def slow_handler(_request):
+        time.sleep(0.3)
+        return Response(
+            '{"message": {"role": "assistant", "content": "too slow"}}',
+            content_type="application/json",
+        )
+
+    httpserver.expect_request("/api/chat").respond_with_handler(slow_handler)
+    client = OllamaClient(base_url=httpserver.url_for(""))
+
+    with pytest.raises(LLMConnectionError, match="did not respond within"):
+        client.generate("system", "user", timeout=0.05)

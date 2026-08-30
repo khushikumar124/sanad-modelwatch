@@ -31,8 +31,11 @@ from sanad.api.schemas import (
     ChatRequest,
     ChatResponse,
     ComparisonResponse,
+    CoverageResponse,
     DocumentResponse,
     LoginRequest,
+    ObligationsResponse,
+    ReviewResponse,
     RiskResponse,
     SessionResponse,
     SetModelRequest,
@@ -42,6 +45,10 @@ from sanad.api.schemas import (
 from sanad.config import config
 from sanad.features.chatbot import ask
 from sanad.features.comparison import compare_risk_reports
+from sanad.features.contradictions import find_contradictions
+from sanad.features.coverage import check_coverage
+from sanad.features.obligations import extract_obligations
+from sanad.features.review import build_review
 from sanad.features.risk_flagger import flag_risks
 from sanad.features.trace import build_trace
 from sanad.features.summarizer import summarize
@@ -277,6 +284,52 @@ def get_risks(doc_id: str, _user: str | None = Depends(require_user)):
     text is cheap next to re-extracting the PDF."""
     record = _get_record(doc_id)
     return flag_risks(chunk_document(record.text)).to_dict()
+
+
+@app.get("/api/documents/{doc_id}/coverage", response_model=CoverageResponse)
+def get_coverage(doc_id: str, _user: str | None = Depends(require_user)):
+    """Rule-based scan for standard clause categories that don't appear
+    anywhere in the document. No LLM call, instant, reproducible -- same
+    reasoning as get_risks(). See coverage.py: `not_found` never means
+    `missing`, only that this scan's patterns didn't match anything."""
+    record = _get_record(doc_id)
+    return check_coverage(chunk_document(record.text)).to_dict()
+
+
+@app.get("/api/documents/{doc_id}/obligations", response_model=ObligationsResponse)
+def get_obligations(doc_id: str, _user: str | None = Depends(require_user)):
+    """Structured obligation/deadline extraction. Unlike risks/coverage
+    this is an LLM call over the whole document -- "who owes what to
+    whom by when" needs language understanding a rule engine can't do.
+    Every obligation is grounding-checked against the document's own
+    text (see obligations.py) before being trusted."""
+    record = _get_record(doc_id)
+    try:
+        result = extract_obligations(record.text, llm_client)
+    except LLMConnectionError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    return result.to_dict()
+
+
+@app.get("/api/documents/{doc_id}/review", response_model=ReviewResponse)
+def get_review(doc_id: str, _user: str | None = Depends(require_user)):
+    """"Review Contract" synthesis: top issues, negotiable clauses,
+    questions to ask, and areas to clarify -- assembled entirely from
+    risk_flagger's findings, coverage.py's scan, and contradictions
+    found among extracted obligations. No new judgment is added here;
+    see review.py's own docstring. Calls the LLM once (for obligation
+    extraction, to find contradictions), so this is not instant."""
+    record = _get_record(doc_id)
+    chunks = chunk_document(record.text)
+    risk_report = flag_risks(chunks)
+    coverage_report = check_coverage(chunks)
+    try:
+        obligations_report = extract_obligations(record.text, llm_client)
+    except LLMConnectionError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    contradiction_report = find_contradictions(obligations_report.obligations)
+    review = build_review(risk_report, coverage_report, contradiction_report)
+    return {**review.to_dict(), "obligations": obligations_report.to_dict()}
 
 
 @app.get("/api/documents/{doc_id}/compare/{other_doc_id}", response_model=ComparisonResponse)
