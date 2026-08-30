@@ -56,6 +56,7 @@ from sanad.ingestion.extraction import IMAGE_EXTENSIONS
 from sanad.rag.llm_client import LLMConnectionError, OllamaClient
 from sanad.rag.pipeline import ingest_document
 from sanad.rag.vector_store import VectorStore
+from sanad.storage import get_object_store
 
 logging.basicConfig(
     level=getattr(logging, config.log_level, logging.INFO),
@@ -67,6 +68,7 @@ SUPPORTED_EXTENSIONS = {".pdf"} | IMAGE_EXTENSIONS
 
 vector_store = VectorStore()
 llm_client = OllamaClient()
+object_store = get_object_store()
 
 Path(config.upload_dir).mkdir(parents=True, exist_ok=True)
 
@@ -148,17 +150,14 @@ async def upload_document(
         )
 
     doc_id = str(uuid.uuid4())
-    upload_dir = Path(config.upload_dir)
-    # Recreate per-request rather than only at import: the directory can go
-    # away under a long-running server (temp cleaners, a manual rm), and a
-    # missing directory shouldn't turn every later upload into a 500.
-    upload_dir.mkdir(parents=True, exist_ok=True)
-    dest = upload_dir / f"{doc_id}{ext}"
-    dest.write_bytes(await file.read())
+    locator = object_store.save(doc_id, ext, await file.read())
 
-    ingested = ingest_document(str(dest), doc_id, vector_store)
+    with object_store.open_local(locator) as local_path:
+        ingested = ingest_document(local_path, doc_id, vector_store)
+    ingested.source_path = locator
+
     record = db.DocumentRecord.from_ingested(
-        ingested, filename=file.filename or dest.name, contract_type=contract_type
+        ingested, filename=file.filename or f"{doc_id}{ext}", contract_type=contract_type
     )
     db.save_document(record)
 
@@ -180,7 +179,7 @@ def get_document(doc_id: str, _user: str | None = Depends(require_user)):
 def delete_document(doc_id: str, _user: str | None = Depends(require_user)):
     record = _get_record(doc_id)
     vector_store.delete_document(doc_id)
-    Path(record.source_path).unlink(missing_ok=True)
+    object_store.delete(record.source_path)
     db.delete_document(doc_id)
 
 

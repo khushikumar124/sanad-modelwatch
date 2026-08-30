@@ -57,6 +57,21 @@ class Config:
     api_port: int = _int_env("SANAD_API_PORT", 8100)
     upload_dir: str = os.environ.get("SANAD_UPLOAD_DIR", "sanad_uploads")
 
+    # Object storage for the original uploaded file (not its extracted text,
+    # which lives in the database via db.py regardless of this setting).
+    # "local" writes straight to upload_dir and needs nothing installed --
+    # the right default for one machine. "s3" is the same interface backed
+    # by an S3-compatible bucket, for the moment this runs somewhere the
+    # local disk isn't durable/shared (e.g. behind a load balancer with
+    # more than one app instance). Switching is a config change, not a
+    # code change -- see sanad/storage.py.
+    storage_backend: str = os.environ.get("SANAD_STORAGE_BACKEND", "local")
+    s3_bucket: str = os.environ.get("SANAD_S3_BUCKET", "")
+    s3_region: str = os.environ.get("SANAD_S3_REGION", "us-east-1")
+    # Override for S3-compatible services (MinIO, LocalStack, R2) instead of
+    # real AWS. Left empty, boto3 talks to real AWS S3.
+    s3_endpoint_url: str = os.environ.get("SANAD_S3_ENDPOINT_URL", "")
+
     # LLM (Ollama), used by rag/llm_client.py from Stage 4 onward
     ollama_base_url: str = os.environ.get("SANAD_OLLAMA_BASE_URL", "http://localhost:11434")
     # phi3:3.8b over llama3.2:3b: measured on the 18-pair golden set, phi3
