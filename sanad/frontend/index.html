@@ -627,6 +627,21 @@ async function api(path, options = {}) {
   return res.status === 204 ? null : res.json();
 }
 
+/* Starts a background job (POST) and polls it to completion, so a slow
+   LLM call never blocks the tab the way a plain awaited fetch would --
+   see sanad/jobs.py. `onTick` (optional) is called with the elapsed
+   seconds on every poll, for a "still working…" progress message. */
+async function runJob(startPath, onTick) {
+  const { job_id } = await api(startPath, { method: "POST" });
+  while (true) {
+    const job = await api("/jobs/" + job_id);
+    if (onTick) onTick(job.elapsed_seconds);
+    if (job.status === "done") return job.result;
+    if (job.status === "error") throw new Error(job.error || "The job failed.");
+    await new Promise(r => setTimeout(r, 1500));
+  }
+}
+
 /* ---------------- session ---------------- */
 async function checkSession() {
   try {
@@ -911,15 +926,22 @@ const reviewCache = {};   // doc_id -> {review, obligations, coverage}
 async function loadReview(id) {
   const body = document.getElementById("reviewBody");
   if (reviewCache[id]) return renderReview(reviewCache[id]);
-  body.innerHTML = '<div class="skel"><div style="width:40%"></div><div style="width:90%"></div><div style="width:70%"></div></div>' +
-    '<div class="fineprint" style="margin-top:10px;">Extracting obligations and checking clause coverage — this calls the model once, so it can take a little while.</div>';
+  const setProgress = secs => {
+    body.innerHTML = '<div class="skel"><div style="width:40%"></div><div style="width:90%"></div><div style="width:70%"></div></div>' +
+      '<div class="fineprint" style="margin-top:10px;">Extracting obligations and checking clause coverage — ' +
+      (secs ? Math.round(secs) + 's so far. ' : '') +
+      'This runs in the background, so feel free to switch tabs and come back.</div>';
+  };
+  setProgress(0);
   try {
-    // /review already runs obligation extraction internally (it needs
-    // the obligations to check for contradictions) and returns them --
-    // fetching /obligations separately here would run that same slow
-    // LLM call a second time for no reason.
+    // The review job already runs obligation extraction internally (it
+    // needs the obligations to check for contradictions) and returns
+    // them -- fetching /obligations separately would run that same slow
+    // LLM call a second time for no reason. Runs as a background job
+    // (sanad/jobs.py) rather than a blocking fetch, since this can take
+    // anywhere from ~10s to several minutes on a local model.
     const [review, coverage] = await Promise.all([
-      api("/documents/" + id + "/review"),
+      runJob("/documents/" + id + "/review/job", setProgress),
       api("/documents/" + id + "/coverage"),
     ]);
     const data = { review, obligations: review.obligations, coverage };

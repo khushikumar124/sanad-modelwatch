@@ -227,7 +227,57 @@ def test_review_response_includes_obligations_without_a_second_llm_call(uploaded
     assert res.status_code == 200
     body = res.json()
     assert "obligations" in body
-    assert "obligations" in body["obligations"]  # ObligationsResponse shape nested under the key
+
+
+def _wait_for_job(job_id, timeout=5.0):
+    import time as _time
+
+    deadline = _time.time() + timeout
+    while _time.time() < deadline:
+        res = client.get(f"/api/jobs/{job_id}")
+        if res.json()["status"] in ("done", "error"):
+            return res.json()
+        _time.sleep(0.02)
+    raise AssertionError(f"job {job_id} did not finish within {timeout}s")
+
+
+def test_obligations_job_starts_and_completes(uploaded_doc_id, fake_llm_response):
+    start = client.post(f"/api/documents/{uploaded_doc_id}/obligations/job")
+    assert start.status_code == 202
+    job_id = start.json()["job_id"]
+
+    job = _wait_for_job(job_id)
+    assert job["status"] == "done"
+    assert "obligations" in job["result"]
+
+
+def test_review_job_starts_and_completes(uploaded_doc_id, fake_llm_response):
+    start = client.post(f"/api/documents/{uploaded_doc_id}/review/job")
+    assert start.status_code == 202
+    job_id = start.json()["job_id"]
+
+    job = _wait_for_job(job_id)
+    assert job["status"] == "done"
+    assert "top_issues" in job["result"]
+    assert "obligations" in job["result"]
+
+
+def test_obligations_job_reports_error_status_when_llm_unreachable(uploaded_doc_id, llm_unreachable):
+    start = client.post(f"/api/documents/{uploaded_doc_id}/obligations/job")
+    assert start.status_code == 202
+    job = _wait_for_job(start.json()["job_id"])
+    assert job["status"] == "error"
+    assert "ollama" in job["error"].lower()
+
+
+def test_obligations_job_unknown_document_returns_404_immediately():
+    res = client.post("/api/documents/does-not-exist/obligations/job")
+    assert res.status_code == 404
+
+
+def test_job_status_unknown_job_id_returns_404():
+    res = client.get("/api/jobs/does-not-exist")
+    assert res.status_code == 404
 
 
 def test_review_unknown_document_returns_404():

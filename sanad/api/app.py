@@ -53,6 +53,7 @@ from sanad.features.review import build_review
 from sanad.features.risk_flagger import flag_risks
 from sanad.features.trace import build_trace
 from sanad.features.summarizer import summarize
+from sanad.jobs import jobs
 from sanad.ingestion.chunking import chunk_document
 from sanad.ingestion.extraction import IMAGE_EXTENSIONS
 from sanad.rag.llm_client import LLMConnectionError, OllamaClient
@@ -309,19 +310,38 @@ def get_coverage(doc_id: str, _user: str | None = Depends(require_user)):
     return check_coverage(chunk_document(record.text)).to_dict()
 
 
+def _compute_obligations(doc_id: str) -> dict:
+    record = _get_record(doc_id)
+    return extract_obligations(record.text, llm_client).to_dict()
+
+
+def _compute_review(doc_id: str) -> dict:
+    record = _get_record(doc_id)
+    chunks = chunk_document(record.text)
+    risk_report = flag_risks(chunks)
+    coverage_report = check_coverage(chunks)
+    obligations_report = extract_obligations(record.text, llm_client)
+    contradiction_report = find_contradictions(obligations_report.obligations)
+    review = build_review(risk_report, coverage_report, contradiction_report)
+    return {**review.to_dict(), "obligations": obligations_report.to_dict()}
+
+
 @app.get("/api/documents/{doc_id}/obligations", response_model=ObligationsResponse)
 def get_obligations(doc_id: str, _user: str | None = Depends(require_user)):
     """Structured obligation/deadline extraction. Unlike risks/coverage
     this is an LLM call over the whole document -- "who owes what to
     whom by when" needs language understanding a rule engine can't do.
     Every obligation is grounding-checked against the document's own
-    text (see obligations.py) before being trusted."""
-    record = _get_record(doc_id)
+    text (see obligations.py) before being trusted.
+
+    This blocks the request for as long as the model takes (measured:
+    anywhere from ~10s to several minutes -- see obligations.py's
+    docstring). Prefer POST .../obligations/job for anything driving a
+    UI; this synchronous form is kept for scripts/tests/curl."""
     try:
-        result = extract_obligations(record.text, llm_client)
+        return _compute_obligations(doc_id)
     except LLMConnectionError as e:
         raise HTTPException(status_code=503, detail=str(e))
-    return result.to_dict()
 
 
 @app.get("/api/documents/{doc_id}/review", response_model=ReviewResponse)
@@ -331,18 +351,42 @@ def get_review(doc_id: str, _user: str | None = Depends(require_user)):
     risk_flagger's findings, coverage.py's scan, and contradictions
     found among extracted obligations. No new judgment is added here;
     see review.py's own docstring. Calls the LLM once (for obligation
-    extraction, to find contradictions), so this is not instant."""
-    record = _get_record(doc_id)
-    chunks = chunk_document(record.text)
-    risk_report = flag_risks(chunks)
-    coverage_report = check_coverage(chunks)
+    extraction, to find contradictions), so this is not instant.
+
+    Synchronous form, kept for scripts/tests/curl -- prefer
+    POST .../review/job for anything driving a UI (see jobs.py)."""
     try:
-        obligations_report = extract_obligations(record.text, llm_client)
+        return _compute_review(doc_id)
     except LLMConnectionError as e:
         raise HTTPException(status_code=503, detail=str(e))
-    contradiction_report = find_contradictions(obligations_report.obligations)
-    review = build_review(risk_report, coverage_report, contradiction_report)
-    return {**review.to_dict(), "obligations": obligations_report.to_dict()}
+
+
+@app.post("/api/documents/{doc_id}/obligations/job", status_code=202)
+def start_obligations_job(doc_id: str, _user: str | None = Depends(require_user)):
+    """Starts obligation extraction in the background and returns
+    immediately with a job_id -- poll GET /api/jobs/{job_id} for the
+    result. See sanad/jobs.py for why this exists: the synchronous
+    version above can block a browser tab for minutes."""
+    _get_record(doc_id)  # 404 fast, before handing work to a background thread
+    job_id = jobs.submit("obligations", lambda: _compute_obligations(doc_id))
+    return {"job_id": job_id}
+
+
+@app.post("/api/documents/{doc_id}/review/job", status_code=202)
+def start_review_job(doc_id: str, _user: str | None = Depends(require_user)):
+    """Starts the Review synthesis in the background -- see
+    start_obligations_job() and sanad/jobs.py."""
+    _get_record(doc_id)
+    job_id = jobs.submit("review", lambda: _compute_review(doc_id))
+    return {"job_id": job_id}
+
+
+@app.get("/api/jobs/{job_id}")
+def get_job_status(job_id: str, _user: str | None = Depends(require_user)):
+    job = jobs.get(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail=f"job '{job_id}' not found")
+    return job.to_dict()
 
 
 @app.get("/api/documents/{doc_id}/compare/{other_doc_id}", response_model=ComparisonResponse)
