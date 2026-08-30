@@ -199,10 +199,76 @@
     white-space: pre-wrap; word-break: break-word; margin: 6px 0 0;
     color: var(--text-3); font-size: 10.5px; font-family: var(--mono);
   }
+
+  /* ---------- app shell: sidebar + multi-page content ----------
+     Progressive disclosure: Overview answers "what is happening",
+     the other pages answer "why" -- see each page's own heading.
+     All existing render functions are untouched; they still write
+     into the same element ids, just inside a named <section class="page">
+     that this shell shows/hides. Data keeps refreshing in the
+     background regardless of which page is visible, so switching
+     pages never shows stale numbers. */
+  .app { display: flex; min-height: 100vh; }
+  .sidebar {
+    width: 190px; flex-shrink: 0; background: var(--panel);
+    border-right: 1px solid var(--line); padding: 16px 0; overflow-y: auto;
+  }
+  .sidebar .group { margin-bottom: 16px; }
+  .sidebar .group-label {
+    font-size: 9px; text-transform: uppercase; letter-spacing: .12em;
+    color: var(--text-3); padding: 0 16px; margin-bottom: 6px;
+  }
+  .sidebar .nav-item {
+    display: block; padding: 6px 16px; color: var(--text-2); font-size: 12px;
+    cursor: pointer; border-left: 2px solid transparent; user-select: none;
+  }
+  .sidebar .nav-item:hover { color: var(--text); background: var(--panel-2); }
+  .sidebar .nav-item.active {
+    color: var(--teal); border-left-color: var(--teal); background: var(--panel-2);
+  }
+  .content-col { flex: 1; min-width: 0; }
+  .page { display: none; }
+  .page.active { display: block; }
+  .page-head { margin-bottom: 14px; }
+  .page-head h1 { font-size: 16px; margin: 0 0 3px; }
+  .page-head .sub { color: var(--text-3); font-size: 12px; }
+  .linklike {
+    background: none; border: none; color: var(--teal); cursor: pointer;
+    font: inherit; padding: 0; text-decoration: underline;
+  }
 </style>
 </head>
 <body>
 
+<div class="app">
+<nav class="sidebar" id="sidebar">
+  <div class="group">
+    <div class="group-label">Overview</div>
+    <a class="nav-item active" data-page="overview">Overview</a>
+  </div>
+  <div class="group">
+    <div class="group-label">Monitoring</div>
+    <a class="nav-item" data-page="monitoring">Live Traffic &amp; Drift</a>
+  </div>
+  <div class="group">
+    <div class="group-label">Intelligence</div>
+    <a class="nav-item" data-page="debugger">AI Debugger (RAG X-Ray)</a>
+  </div>
+  <div class="group">
+    <div class="group-label">Incidents</div>
+    <a class="nav-item" data-page="incidents">Active Incidents</a>
+  </div>
+  <div class="group">
+    <div class="group-label">Experiments</div>
+    <a class="nav-item" data-page="experiments">Experiment Registry</a>
+  </div>
+  <div class="group">
+    <div class="group-label">Registry</div>
+    <a class="nav-item" data-page="registry">Models &amp; Versions</a>
+  </div>
+</nav>
+
+<div class="content-col">
 <header>
   <span class="logo">ModelWatch</span>
   <span class="live"><i></i>live · 8s</span>
@@ -211,64 +277,126 @@
 </header>
 
 <main>
-  <div class="status ok" id="status">
-    <div class="icon" id="statusIcon">●</div>
-    <div>
-      <div class="headline" id="statusHead">—</div>
-      <div class="detail" id="statusDetail"></div>
+  <section class="page active" data-page="overview">
+    <div class="page-head">
+      <h1>Overview</h1>
+      <div class="sub">What is happening right now, for the selected model.</div>
     </div>
-  </div>
+    <div class="status ok" id="status">
+      <div class="icon" id="statusIcon">●</div>
+      <div>
+        <div class="headline" id="statusHead">—</div>
+        <div class="detail" id="statusDetail"></div>
+      </div>
+    </div>
 
-  <div class="identity" id="identity"></div>
+    <div class="identity" id="identity"></div>
 
-  <div class="tiles" id="tiles"></div>
+    <div class="tiles" id="tiles"></div>
 
-  <div class="panel">
-    <h2>Quality &amp; drift over time <span class="note" id="chartNote"></span></h2>
-    <canvas id="chart" height="86"></canvas>
-  </div>
-
-  <div class="cols">
     <div class="panel">
-      <h2>Run history <span class="note">click a row to inspect</span></h2>
+      <h2>Quality &amp; drift over time <span class="note" id="chartNote"></span></h2>
+      <canvas id="chart" height="86"></canvas>
+    </div>
+  </section>
+
+  <section class="page" data-page="monitoring">
+    <div class="page-head">
+      <h1>Live Traffic &amp; Drift</h1>
+      <div class="sub">Why the current state looks the way it does -- per-run history and the statistical detail behind each signal.</div>
+    </div>
+    <div class="cols">
+      <div class="panel">
+        <h2>Run history <span class="note">click a row to inspect</span></h2>
+        <table>
+          <thead><tr><th>Time</th><th>Ver</th><th>Quality</th><th>Δ</th><th>Drift</th><th>Status</th></tr></thead>
+          <tbody id="historyBody"><tr><td colspan="6" class="empty">No runs recorded yet.</td></tr></tbody>
+        </table>
+      </div>
+
+      <div>
+        <div class="panel">
+          <h2>Signal breakdown <span class="note" id="sigNote"></span></h2>
+          <div id="signals"><div class="empty">No run selected.</div></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>How this is measured</h2>
+      <div class="explain" id="explain"></div>
+    </div>
+  </section>
+
+  <section class="page" data-page="debugger">
+    <div class="page-head">
+      <h1>AI Debugger &middot; RAG X-Ray</h1>
+      <div class="sub">Per-request pipeline inspection: retrieval, ranking, claim verification, citations.</div>
+    </div>
+    <div class="panel">
+      <h2>Recent requests <span class="note">click a row to inspect the pipeline</span>
+        <span style="flex:1"></span>
+        <select id="traceFilter" style="margin-left:auto;">
+          <option value="">All requests</option>
+          <option value="true">Grounded only</option>
+          <option value="false">Refusals only</option>
+        </select>
+      </h2>
       <table>
-        <thead><tr><th>Time</th><th>Ver</th><th>Quality</th><th>Δ</th><th>Drift</th><th>Status</th></tr></thead>
-        <tbody id="historyBody"><tr><td colspan="6" class="empty">No runs recorded yet.</td></tr></tbody>
+        <thead><tr><th>Time</th><th>Question</th><th>Status</th><th>Best sim</th><th>Latency</th></tr></thead>
+        <tbody id="traceBody"><tr><td colspan="5" class="empty">No traces recorded yet -- enable SANAD_TELEMETRY_FULL_TRACE and ask a question in Sanad.</td></tr></tbody>
       </table>
     </div>
+  </section>
 
-    <div>
-      <div class="panel">
-        <h2>Signal breakdown <span class="note" id="sigNote"></span></h2>
-        <div id="signals"><div class="empty">No run selected.</div></div>
-      </div>
-      <div class="panel">
-        <h2>Active alerts</h2>
-        <div id="alerts"><div class="empty">None.</div></div>
-      </div>
+  <section class="page" data-page="incidents">
+    <div class="page-head">
+      <h1>Active Incidents</h1>
+      <div class="sub">Alerts currently open for the selected model.</div>
     </div>
-  </div>
+    <div class="panel">
+      <h2>Active alerts</h2>
+      <div id="alerts"><div class="empty">None.</div></div>
+    </div>
+  </section>
 
-  <div class="panel">
-    <h2>RAG X-Ray <span class="note">recent full traces &middot; click a row to inspect the pipeline</span>
-      <span style="flex:1"></span>
-      <select id="traceFilter" style="margin-left:auto;">
-        <option value="">All requests</option>
-        <option value="true">Grounded only</option>
-        <option value="false">Refusals only</option>
-      </select>
-    </h2>
-    <table>
-      <thead><tr><th>Time</th><th>Question</th><th>Status</th><th>Best sim</th><th>Latency</th></tr></thead>
-      <tbody id="traceBody"><tr><td colspan="5" class="empty">No traces recorded yet -- enable SANAD_TELEMETRY_FULL_TRACE and ask a question in Sanad.</td></tr></tbody>
-    </table>
-  </div>
+  <section class="page" data-page="experiments">
+    <div class="page-head">
+      <h1>Experiment Registry</h1>
+      <div class="sub">Benchmark/ablation/drift-lab runs recorded via <code>scripts/run_benchmark.py --register</code> or the <code>/experiments</code> API. Real recorded results, not live-computed.</div>
+    </div>
+    <div class="panel">
+      <h2>Recorded experiments <span class="note">click a row for full config/results</span></h2>
+      <table>
+        <thead><tr><th>Recorded</th><th>Name</th><th>Kind</th><th>Status</th><th></th></tr></thead>
+        <tbody id="experimentsBody"><tr><td colspan="5" class="empty">Loading…</td></tr></tbody>
+      </table>
+    </div>
+  </section>
 
-  <div class="panel">
-    <h2>How this is measured</h2>
-    <div class="explain" id="explain"></div>
-  </div>
+  <section class="page" data-page="registry">
+    <div class="page-head">
+      <h1>Models &amp; Versions</h1>
+      <div class="sub">Every model registered with this ModelWatch instance, and each one's version history.</div>
+    </div>
+    <div class="panel">
+      <h2>Registered models</h2>
+      <table>
+        <thead><tr><th>Model ID</th><th>Name</th><th>Adapter</th><th>Version</th><th>Registered</th></tr></thead>
+        <tbody id="registryBody"><tr><td colspan="5" class="empty">Loading…</td></tr></tbody>
+      </table>
+    </div>
+    <div class="panel">
+      <h2>Version history <span class="note" id="versionsNote"></span></h2>
+      <table>
+        <thead><tr><th>Version</th><th>Reason</th><th>Created</th></tr></thead>
+        <tbody id="versionsBody"><tr><td colspan="3" class="empty">Select a model above.</td></tr></tbody>
+      </table>
+    </div>
+  </section>
 </main>
+</div>
+</div>
 
 <div id="drawer">
   <button class="xbtn" onclick="closeDrawer()">esc · close</button>
@@ -832,6 +960,106 @@ document.getElementById("modelSelect").addEventListener("change", e => {
   modelId = e.target.value; selectedRun = null;
   if (chart) { chart.destroy(); chart = null; }
   refresh();
+  if (currentPage === "registry") loadVersions();
+});
+
+/* ---------------- experiments (reuses the existing /experiments API --
+   the same registry scripts/run_benchmark.py --register writes to;
+   this page just surfaces what was already recorded there) ---------------- */
+async function loadExperiments() {
+  const body = document.getElementById("experimentsBody");
+  try {
+    const exps = await get("/experiments");
+    if (!exps.length) {
+      body.innerHTML = '<tr><td colspan="5" class="empty">No experiments recorded yet -- run <code>python scripts/run_benchmark.py --register</code>.</td></tr>';
+      return;
+    }
+    body.innerHTML = exps.slice().reverse().map(e => `
+      <tr data-exp="${e.id}">
+        <td>${day(e.created_at)}</td>
+        <td>${esc(e.name)}</td>
+        <td>${esc(e.kind)}</td>
+        <td><span class="tag ${e.status === "completed" ? "clean" : "drift"}">${esc(e.status)}</span></td>
+        <td><button class="linklike" data-exp-open="${e.id}">view</button></td>
+      </tr>`).join("");
+    [...body.querySelectorAll("[data-exp-open]")].forEach(b =>
+      b.onclick = () => openExperiment(b.dataset.expOpen));
+  } catch (e) {
+    body.innerHTML = '<tr><td colspan="5" class="empty">' + esc(e.message) + '</td></tr>';
+  }
+}
+
+async function openExperiment(id) {
+  let exp;
+  try { exp = await get(`/experiments/${id}`); } catch (e) { console.error(e); return; }
+  document.getElementById("drawerTitle").textContent = exp.name;
+  document.getElementById("drawerSub").textContent = day(exp.created_at) + " · " + exp.kind + " · " + exp.status;
+  document.getElementById("drawerStats").innerHTML =
+    `<div class="k">kind</div><div>${esc(exp.kind)}</div><div class="k">status</div><div>${esc(exp.status)}</div>`;
+  document.getElementById("drawerDiagnosis").innerHTML = "";
+  document.getElementById("drawerSignals").innerHTML =
+    '<div style="font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;color:var(--text-3);margin-bottom:8px;">Config</div>' +
+    `<pre style="white-space:pre-wrap;word-break:break-word;font-family:var(--mono);font-size:11px;color:var(--text-2);">${esc(JSON.stringify(exp.config, null, 2))}</pre>` +
+    '<div style="font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;color:var(--text-3);margin:14px 0 8px;">Results</div>' +
+    `<pre style="white-space:pre-wrap;word-break:break-word;font-family:var(--mono);font-size:11px;color:var(--text-2);">${esc(JSON.stringify(exp.results, null, 2))}</pre>`;
+  document.getElementById("drawer").classList.add("open");
+}
+
+/* ---------------- registry (reuses /models and /models/{id}/versions --
+   both already existed; this page is the first place in the dashboard
+   that surfaces version history at all) ---------------- */
+async function loadRegistry() {
+  const body = document.getElementById("registryBody");
+  try {
+    const models = await get("/models");
+    if (!models.length) {
+      body.innerHTML = '<tr><td colspan="5" class="empty">No models registered.</td></tr>';
+      return;
+    }
+    body.innerHTML = models.map(m => `
+      <tr data-model="${m.model_id}">
+        <td>${esc(m.model_id)}</td>
+        <td>${esc(m.name)}</td>
+        <td>${esc(m.adapter_name)}</td>
+        <td>v${m.current_version}</td>
+        <td>${day(m.created_at)}</td>
+      </tr>`).join("");
+    [...body.querySelectorAll("tr[data-model]")].forEach(tr =>
+      tr.onclick = () => loadVersions(tr.dataset.model));
+  } catch (e) {
+    body.innerHTML = '<tr><td colspan="5" class="empty">' + esc(e.message) + '</td></tr>';
+  }
+}
+
+async function loadVersions(forModelId) {
+  const targetId = forModelId || modelId;
+  if (!targetId) return;
+  document.getElementById("versionsNote").textContent = "for " + targetId;
+  const body = document.getElementById("versionsBody");
+  try {
+    const versions = await get(`/models/${targetId}/versions`);
+    body.innerHTML = versions.length
+      ? versions.map(v => `<tr><td>v${v.version}</td><td>${esc(v.reason)}</td><td>${day(v.created_at)}</td></tr>`).join("")
+      : '<tr><td colspan="3" class="empty">No version history.</td></tr>';
+  } catch (e) {
+    body.innerHTML = '<tr><td colspan="3" class="empty">' + esc(e.message) + '</td></tr>';
+  }
+}
+
+/* ---------------- sidebar navigation ---------------- */
+let currentPage = "overview";
+document.querySelectorAll(".nav-item").forEach(item => {
+  item.addEventListener("click", () => {
+    const page = item.dataset.page;
+    if (page === currentPage) return;
+    document.querySelectorAll(".nav-item").forEach(i => i.classList.remove("active"));
+    document.querySelectorAll(".page").forEach(p => p.classList.remove("active"));
+    item.classList.add("active");
+    document.querySelector(`.page[data-page="${page}"]`).classList.add("active");
+    currentPage = page;
+    if (page === "experiments") loadExperiments();
+    if (page === "registry") { loadRegistry(); loadVersions(); }
+  });
 });
 
 refresh();
