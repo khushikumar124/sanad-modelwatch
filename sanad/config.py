@@ -110,6 +110,11 @@ class Config:
     session_cookie_secure: bool = _bool_env("SANAD_SESSION_COOKIE_SECURE", False)
 
     log_level: str = os.environ.get("SANAD_LOG_LEVEL", "INFO")
+    # "text" (default): the original human-readable single-line format.
+    # "json": one JSON object per log line (see sanad/observability.py),
+    # for when logs are actually consumed by something that parses them
+    # rather than a person reading server output directly.
+    log_format: str = os.environ.get("SANAD_LOG_FORMAT", "text")
 
     # Whether the full per-request RAG trace (question, answer, retrieved/
     # cited evidence text, claim verification) is included in telemetry

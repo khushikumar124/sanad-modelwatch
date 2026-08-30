@@ -55,14 +55,12 @@ from sanad.ingestion.chunking import chunk_document
 from sanad.ingestion.extraction import IMAGE_EXTENSIONS
 from sanad.rag.llm_client import LLMConnectionError, OllamaClient
 from sanad.rag.pipeline import ingest_document
+from sanad.observability import configure_logging, request_id_middleware
 from sanad.rag.vector_store import VectorStore
 from sanad.security import UploadValidationError, validate_upload
 from sanad.storage import get_object_store
 
-logging.basicConfig(
-    level=getattr(logging, config.log_level, logging.INFO),
-    format="%(asctime)s %(levelname)s %(name)s %(message)s",
-)
+configure_logging(config.log_level, config.log_format)
 logger = logging.getLogger(__name__)
 
 SUPPORTED_EXTENSIONS = {".pdf"} | IMAGE_EXTENSIONS
@@ -92,6 +90,11 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+# Assigns/propagates a request ID for every request; every log line
+# emitted while handling it carries the same ID (via a contextvar, see
+# sanad/observability.py), and the response echoes it in X-Request-ID so
+# a reported issue can be matched to exact server-side log lines.
+app.middleware("http")(request_id_middleware)
 
 
 def _get_record(doc_id: str) -> db.DocumentRecord:
