@@ -288,6 +288,7 @@
   <div class="group">
     <div class="group-label">Experiments</div>
     <a class="nav-item" data-page="experiments">Experiment Registry</a>
+    <a class="nav-item" data-page="driftlab">Drift Lab</a>
   </div>
   <div class="group">
     <div class="group-label">Registry</div>
@@ -517,6 +518,31 @@ print(result["is_drifted"], result["drift_score"], result["signals"])</pre></div
         <tbody id="experimentsBody"><tr><td colspan="5" class="empty">Loading…</td></tr></tbody>
       </table>
     </div>
+  </section>
+
+  <section class="page" data-page="driftlab">
+    <div class="page-head">
+      <h1>Drift Lab</h1>
+      <div class="sub">Controlled interventions on Sanad's real pipeline -- requires Ollama serving Sanad's configured model. No fake-LLM path: this measures what the real model actually does under each intervention.</div>
+    </div>
+    <div class="panel">
+      <h2>Run a scenario</h2>
+      <div class="explain" style="margin-bottom:12px;">
+        <p><b>retrieval_narrowing</b> -- shrinks top-k so the correct chunk is retrieved far less often, simulating a retrieval regression.</p>
+        <p><b>chunk_fragmentation</b> -- re-chunks documents into much smaller pieces, fragmenting clauses, simulating a chunking-pipeline regression.</p>
+      </div>
+      <div style="display:flex;gap:10px;align-items:center;">
+        <select id="driftLabScenario">
+          <option value="retrieval_narrowing">retrieval_narrowing</option>
+          <option value="chunk_fragmentation">chunk_fragmentation</option>
+        </select>
+        <input id="driftLabNCases" type="number" min="1" max="22" value="8" style="width:60px;background:var(--panel-2);border:1px solid var(--line);border-radius:6px;padding:7px 11px;font-family:var(--mono);font-size:12px;color:var(--text);" />
+        <span style="color:var(--text-3);font-size:11px;">cases (below 8, detectors correctly report "insufficient sample" instead of a verdict -- more = slower, real LLM calls)</span>
+        <button class="linklike" id="driftLabRunBtn" style="border:1px solid var(--teal);border-radius:6px;padding:6px 14px;color:var(--teal);text-decoration:none;">Run scenario</button>
+      </div>
+      <div id="driftLabStatus" style="margin-top:12px;"></div>
+    </div>
+    <div id="driftLabResult"></div>
   </section>
 
   <section class="page" data-page="registry">
@@ -1283,6 +1309,107 @@ document.querySelectorAll(".nav-item").forEach(item => {
     if (page === "connect") loadConnectStatus();
   });
 });
+
+/* ---------------- drift lab ----------------
+   Real interventions against Sanad's live pipeline (see
+   modelwatch/experiments/drift_lab.py) -- everything rendered here is a
+   real measured value from that run, never a staged/precomputed number.
+   A run can take anywhere from under a minute to several minutes
+   (n_cases x 2 real Ollama calls), so this submits a background job and
+   polls it, same pattern as Sanad's own obligations/review jobs. */
+let driftLabPollTimer = null;
+
+function driftLabStage(label, value) {
+  return `<div class="pipe-stage"><div class="pipe-dot"></div><div>
+    <div class="pipe-label">${esc(label)}</div>
+    <div class="pipe-value">${esc(value)}</div>
+  </div></div>`;
+}
+
+async function runDriftLab() {
+  const scenario = document.getElementById("driftLabScenario").value;
+  const nCases = document.getElementById("driftLabNCases").value;
+  const statusBox = document.getElementById("driftLabStatus");
+  const resultBox = document.getElementById("driftLabResult");
+  const btn = document.getElementById("driftLabRunBtn");
+
+  if (driftLabPollTimer) clearInterval(driftLabPollTimer);
+  resultBox.innerHTML = "";
+  btn.textContent = "Running…";
+
+  let jobId;
+  try {
+    const started = await (await fetch(`/drift-lab/run?scenario=${scenario}&n_cases=${nCases}`, { method: "POST" })).json();
+    jobId = started.job_id;
+  } catch (e) {
+    statusBox.innerHTML = '<div class="empty">' + esc(e.message) + '</div>';
+    btn.textContent = "Run scenario";
+    return;
+  }
+
+  statusBox.innerHTML = '<div class="explain"><p>Running against Ollama -- this calls the real model twice per case (baseline + intervention), so it can take a while.</p></div>';
+
+  driftLabPollTimer = setInterval(async () => {
+    let job;
+    try {
+      job = await (await fetch(`/drift-lab/jobs/${jobId}`)).json();
+    } catch (e) { return; }
+
+    statusBox.innerHTML = `<div class="explain"><p>Status: <b>${esc(job.status)}</b> -- ${job.elapsed_seconds}s elapsed</p></div>`;
+
+    if (job.status === "done") {
+      clearInterval(driftLabPollTimer);
+      btn.textContent = "Run scenario";
+      renderDriftLabResult(job.result);
+    } else if (job.status === "error") {
+      clearInterval(driftLabPollTimer);
+      btn.textContent = "Run scenario";
+      statusBox.innerHTML = '<div class="empty">Scenario failed: ' + esc(job.error || "unknown error") + '</div>';
+    }
+  }, 3000);
+}
+
+function renderDriftLabResult(result) {
+  const dr = result.drift_result;
+  const diag = result.diagnosis;
+  const baselineGrounded = result.baseline_events.filter(e => e.grounded).length;
+  const currentGrounded = result.current_events.filter(e => e.grounded).length;
+
+  const pipeline = '<div class="pipeline">' +
+    driftLabStage("Normal", `${baselineGrounded}/${result.baseline_events.length} grounded (baseline behavior)`) +
+    driftLabStage("Intervention", `${esc(result.scenario)} applied to ${result.n_cases} case(s)`) +
+    driftLabStage("Signal change", `${currentGrounded}/${result.current_events.length} grounded under intervention`) +
+    driftLabStage("Detection", dr.is_drifted ? `DRIFTED (score ${f3(dr.drift_score)})` : `not flagged (score ${f3(dr.drift_score)})`) +
+    driftLabStage("Diagnosis", diag.likely_subsystem
+      ? `${diag.likely_subsystem} (confidence ${f3(diag.confidence)})`
+      : "no single subsystem stood out") +
+  '</div>';
+
+  const signalRows = dr.signals.map(s => `
+    <div class="item ${s.is_drifted ? "flagged" : ""}">
+      <div class="n">${esc(s.name)}</div>
+      <div style="margin-top:4px;color:${s.is_drifted ? "var(--danger)" : "var(--text-2)"};font-family:var(--mono);">
+        ${f3(s.value)} ${s.is_drifted ? "· flagged" : ""}
+      </div>
+    </div>`).join("");
+
+  document.getElementById("driftLabResult").innerHTML = `
+    <div class="panel">
+      <h2>Result <span class="note">${esc(result.scenario)} &middot; ${result.n_cases} case(s)</span></h2>
+      ${pipeline}
+    </div>
+    <div class="panel">
+      <h2>Signal breakdown</h2>
+      ${signalRows}
+    </div>
+    ${diag.reasoning && diag.reasoning.length ? `
+    <div class="panel">
+      <h2>Diagnosis reasoning</h2>
+      <div class="explain">${diag.reasoning.map(r => `<p>&middot; ${esc(r)}</p>`).join("")}</div>
+    </div>` : ""}`;
+}
+
+document.getElementById("driftLabRunBtn").addEventListener("click", runDriftLab);
 
 /* ---------------- connect your model ---------------- */
 async function loadConnectStatus() {

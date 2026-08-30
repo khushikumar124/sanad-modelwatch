@@ -48,3 +48,60 @@ def test_config_endpoint_reflects_health_hysteresis_settings(client, monkeypatch
     )
     res = client.get("/config")
     assert res.json()["health_degraded_after_consecutive"] == 3
+
+
+# -- Drift Lab job endpoints --------------------------------------------
+# These test validation only, not real scenario execution -- a real run
+# needs Ollama serving Sanad's configured model (see
+# modelwatch/experiments/drift_lab.py's own docstring: "there is no
+# fake-LLM path here"), which this unit test suite doesn't assume is
+# available. The actual scenario execution is verified live instead.
+
+
+def test_drift_lab_rejects_an_unknown_scenario(client):
+    res = client.post("/drift-lab/run?scenario=not_a_real_scenario")
+    assert res.status_code == 400
+
+
+def test_drift_lab_rejects_n_cases_out_of_range(client):
+    assert client.post("/drift-lab/run?scenario=retrieval_narrowing&n_cases=0").status_code == 400
+    assert client.post("/drift-lab/run?scenario=retrieval_narrowing&n_cases=23").status_code == 400
+
+
+def test_drift_lab_unknown_job_returns_404(client):
+    res = client.get("/drift-lab/jobs/does-not-exist")
+    assert res.status_code == 404
+
+
+def test_drift_lab_accepting_a_valid_request_returns_a_pollable_job_id(client, monkeypatch):
+    """Submits a real job through the real JobManager, but the scenario
+    function itself is monkeypatched so this test doesn't need Ollama --
+    it verifies the job plumbing (submit -> pending/running -> poll),
+    not what a real scenario run measures."""
+    import time
+
+    from modelwatch.experiments import drift_lab
+
+    def fake_retrieval_narrowing(cases, llm_client):
+        return drift_lab.ScenarioResult(
+            scenario="retrieval_narrowing", n_cases=0,
+            baseline_events=[], current_events=[],
+            drift_result=type("R", (), {"to_dict": lambda self: {"is_drifted": False}})(),
+            diagnosis=type("D", (), {"to_dict": lambda self: {"likely_subsystem": None}})(),
+        )
+
+    monkeypatch.setattr(drift_lab, "retrieval_narrowing", fake_retrieval_narrowing)
+    monkeypatch.setattr("sanad.rag.llm_client.OllamaClient", lambda: object())
+    monkeypatch.setattr("sanad.evaluation.dataset.load_dataset", lambda path: [])
+
+    res = client.post("/drift-lab/run?scenario=retrieval_narrowing&n_cases=1")
+    assert res.status_code == 202
+    job_id = res.json()["job_id"]
+
+    for _ in range(50):
+        status = client.get(f"/drift-lab/jobs/{job_id}").json()
+        if status["status"] in ("done", "error"):
+            break
+        time.sleep(0.05)
+    assert status["status"] == "done", status
+    assert status["result"]["scenario"] == "retrieval_narrowing"
