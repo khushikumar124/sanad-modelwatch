@@ -147,6 +147,47 @@ def test_malformed_json_output_fails_safe():
     assert report.obligations == []
 
 
+def test_grounded_obligation_records_which_clause_supports_it():
+    document_text = (
+        "1. Rent. The Tenant shall pay to the Owner a monthly rent of Rs. 25,000 on or before "
+        "the 7th day of each month.\n\n"
+        "2. Notice. This agreement may be terminated by either party serving one month prior "
+        "notice in writing."
+    )
+    response = json.dumps({
+        "obligations": [
+            {
+                "party": "Either party", "obligation": "Give notice to terminate",
+                "deadline": "one month", "category": "notice",
+                "source_quote": "serving one month prior notice in writing",
+            }
+        ]
+    })
+    report = extract_obligations(document_text, FakeLLMClient(response))
+    obligation = report.obligations[0]
+    assert obligation.grounded is True
+    assert obligation.evidence_chunk_index is not None
+    # confirm it points at the clause that actually contains the quote
+    from sanad.ingestion.chunking import chunk_document
+    chunks = chunk_document(document_text)
+    matched_chunk = next(c for c in chunks if c.index == obligation.evidence_chunk_index)
+    assert "one month prior notice" in matched_chunk.text
+
+
+def test_ungrounded_obligation_has_no_evidence_chunk_index():
+    response = json.dumps({
+        "obligations": [
+            {
+                "party": "Tenant", "obligation": "Provide a pet deposit", "deadline": None,
+                "category": "payment", "source_quote": "the Tenant shall pay a pet deposit of Rs. 5,000",
+            }
+        ]
+    })
+    report = extract_obligations(DOCUMENT_TEXT, FakeLLMClient(response))
+    assert report.obligations[0].grounded is False
+    assert report.obligations[0].evidence_chunk_index is None
+
+
 def test_result_is_json_serializable():
     response = json.dumps({"obligations": []})
     report = extract_obligations(DOCUMENT_TEXT, FakeLLMClient(response))

@@ -53,6 +53,16 @@ class RiskResponse(BaseModel):
     counts: dict[str, int]
 
 
+class ClauseResponse(BaseModel):
+    index: int
+    heading: str | None
+    text: str
+
+
+class ClausesResponse(BaseModel):
+    clauses: list[ClauseResponse]
+
+
 class ObligationsResponse(BaseModel):
     obligations: list[dict[str, Any]]
     parse_error: bool

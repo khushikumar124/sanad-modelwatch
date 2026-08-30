@@ -30,6 +30,7 @@ from sanad.api import telemetry
 from sanad.api.schemas import (
     ChatRequest,
     ChatResponse,
+    ClausesResponse,
     ComparisonResponse,
     CoverageResponse,
     DocumentResponse,
@@ -284,6 +285,18 @@ def get_risks(doc_id: str, _user: str | None = Depends(require_user)):
     text is cheap next to re-extracting the PDF."""
     record = _get_record(doc_id)
     return flag_risks(chunk_document(record.text)).to_dict()
+
+
+@app.get("/api/documents/{doc_id}/clauses", response_model=ClausesResponse)
+def get_clauses(doc_id: str, _user: str | None = Depends(require_user)):
+    """The whole document, clause by clause, in order. No LLM call --
+    same chunking every other feature scores/cites against, so a chunk
+    index from a risk finding, coverage result, or obligation always
+    refers to the same clause here. This is what the frontend's
+    click-to-source jump and risk heatmap are built on."""
+    record = _get_record(doc_id)
+    chunks = chunk_document(record.text)
+    return {"clauses": [{"index": c.index, "heading": c.heading, "text": c.text} for c in chunks]}
 
 
 @app.get("/api/documents/{doc_id}/coverage", response_model=CoverageResponse)

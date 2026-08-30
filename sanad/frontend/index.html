@@ -264,6 +264,35 @@
   td { padding: 9px 10px; border-bottom: 1px solid var(--line-soft); vertical-align: top; color: var(--ink-soft); }
   tbody tr:hover { background: var(--surface-2); }
 
+  /* ---------- document view (click-to-source target) ---------- */
+  .clause {
+    background: var(--surface); border: 1px solid var(--line-soft); border-radius: var(--r);
+    padding: 14px 16px; margin-bottom: 10px; transition: box-shadow .3s ease, border-color .3s ease;
+    scroll-margin-top: 20px;
+  }
+  .clause-heading { font-family: var(--serif); font-size: 13.5px; font-weight: 620; color: var(--ink); margin-bottom: 5px; }
+  .clause-text { font-size: 13.5px; color: var(--ink-soft); white-space: pre-wrap; line-height: 1.65; }
+  @keyframes clauseFlash {
+    0%, 100% { background: var(--surface); border-color: var(--line-soft); }
+    30% { background: var(--accent-wash); border-color: var(--accent); }
+  }
+  .clause-flash { animation: clauseFlash 2s ease; }
+
+  /* ---------- risk heatmap ---------- */
+  .heatmap { margin-bottom: 18px; }
+  .heatmap-strip { display: flex; gap: 2px; }
+  .heatmap-cell {
+    flex: 1; height: 22px; border-radius: 3px; background: var(--line-soft); cursor: pointer;
+    transition: transform .1s ease, opacity .1s ease; min-width: 5px;
+  }
+  .heatmap-cell:hover { transform: scaleY(1.25); opacity: .85; }
+  .heatmap-cell.high { background: var(--high); }
+  .heatmap-cell.medium { background: var(--medium); }
+  .heatmap-cell.low { background: var(--low); }
+  .heatmap-legend { display: flex; gap: 14px; margin-top: 7px; font-size: 11px; color: var(--muted); }
+  .heatmap-legend span { display: inline-flex; align-items: center; gap: 5px; }
+  .heatmap-legend i { width: 9px; height: 9px; border-radius: 2px; display: inline-block; }
+
   /* ---------- summary ---------- */
   .sum-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 13px; }
   .sum-card {
@@ -520,6 +549,7 @@
           <button class="tab" data-pane="ask">Ask</button>
           <button class="tab" data-pane="compare">Compare</button>
           <button class="tab" data-pane="review">Review</button>
+          <button class="tab" data-pane="document">Document</button>
           <span style="flex:1"></span>
           <button class="linkish" id="deleteBtn" title="Remove this document">Remove</button>
         </div>
@@ -546,6 +576,7 @@
           </div>
         </div>
         <div class="pane" id="pane-review" hidden><div class="wrap" id="reviewBody"></div></div>
+        <div class="pane" id="pane-document" hidden><div class="wrap" id="documentBody"></div></div>
       </div>
     </main>
   </div>
@@ -716,9 +747,9 @@ async function upload(file) {
 }
 
 /* ---------------- tabs ---------------- */
-function showTab(name) {
+function showTab(name, jumpToClause) {
   document.querySelectorAll(".tab").forEach(t => t.classList.toggle("active", t.dataset.pane === name));
-  ["risks", "summary", "ask", "compare", "review"].forEach(p => {
+  ["risks", "summary", "ask", "compare", "review", "document"].forEach(p => {
     document.getElementById("pane-" + p).hidden = p !== name;
   });
   // Retrigger the entrance animation on the pane we just revealed --
@@ -731,6 +762,17 @@ function showTab(name) {
   if (name === "ask") setTimeout(() => document.getElementById("chatInput").focus(), 30);
   if (name === "compare") renderCompareSelect();
   if (name === "review") loadReview(currentId);
+  if (name === "document") loadDocument(currentId, jumpToClause);
+}
+
+/* ---------------- click-to-source ---------------- */
+// Switches to the Document tab and scrolls/highlights the clause at
+// `index` -- the single jump-to-source path every risk card, coverage
+// row, and obligation row link through, so there's one place that knows
+// how a clause is addressed (#clause-N) and how the highlight looks.
+function goToClause(index) {
+  if (index === null || index === undefined) return;
+  showTab("document", index);
 }
 
 /* ---------------- risks ---------------- */
@@ -771,12 +813,42 @@ function renderRisks(r) {
           '<div class="risk-why">' + esc(f.explanation) + '</div>' +
           '<div class="risk-who">Tends to disadvantage: ' + esc(f.affects) + '</div>' +
           '<div class="risk-quote">' + esc(f.excerpt) + '</div>' +
+          '<button class="linkish" style="padding:2px 0;margin-top:6px;color:var(--accent);" onclick="goToClause(' + f.chunk_index + ')">View in document →</button>' +
         '</div>').join("") +
       '<div class="disclaimer">These are pattern matches on the contract\'s own wording, not legal ' +
       'advice. A flagged clause may be perfectly reasonable in context — read the quoted text and ' +
       'judge it yourself.</div>';
 
-  body.innerHTML = '<div class="scanline">' + head + '</div>' + items;
+  body.innerHTML = '<div class="scanline">' + head + '</div>' + renderHeatmap(r) + items;
+}
+
+/* ---------------- risk heatmap ---------------- */
+function renderHeatmap(r) {
+  if (!r.clauses_scanned) return "";
+  // Highest severity touching each clause index, else no finding there.
+  const bySeverity = { high: 3, medium: 2, low: 1 };
+  const severityAt = new Array(r.clauses_scanned).fill(null);
+  r.findings.forEach(f => {
+    if (f.chunk_index >= 0 && f.chunk_index < r.clauses_scanned) {
+      const current = severityAt[f.chunk_index];
+      if (!current || bySeverity[f.severity] > bySeverity[current]) severityAt[f.chunk_index] = f.severity;
+    }
+  });
+
+  const cells = severityAt.map((sev, i) =>
+    '<div class="heatmap-cell' + (sev ? " " + sev : "") + '" title="Clause ' + (i + 1) + (sev ? ": " + sev + " risk" : ": no flagged risk") +
+    ' — click to view" onclick="goToClause(' + i + ')"></div>').join("");
+
+  return `<div class="heatmap">
+    <div class="heatmap-strip">${cells}</div>
+    <div class="heatmap-legend">
+      <span><i style="background:var(--high);"></i>high</span>
+      <span><i style="background:var(--medium);"></i>medium</span>
+      <span><i style="background:var(--low);"></i>low</span>
+      <span><i style="background:var(--line-soft);"></i>none flagged</span>
+      <span style="margin-left:auto;color:var(--muted);">${r.clauses_scanned} clauses — click any cell to jump to it</span>
+    </div>
+  </div>`;
 }
 
 /* ---------------- compare ---------------- */
@@ -860,10 +932,14 @@ function renderReview(data) {
   const { review, obligations, coverage } = data;
   const body = document.getElementById("reviewBody");
 
+  const sourceLink = idx => idx === null || idx === undefined ? "" :
+    '<button class="linkish" style="padding:2px 0;margin-top:6px;color:var(--accent);" onclick="goToClause(' + idx + ')">View in document →</button>';
+
   const issueCard = i => '<div class="risk ' + i.severity + '">' +
     '<div class="risk-top"><span class="risk-title">' + esc(i.title) + '</span>' +
     '<span class="sev-tag ' + i.severity + '">' + i.severity + '</span></div>' +
-    '<div class="risk-why">' + esc(i.detail) + '</div></div>';
+    '<div class="risk-why">' + esc(i.detail) + '</div>' +
+    sourceLink(i.evidence && i.evidence.chunk_index) + '</div>';
 
   const topIssues = review.top_issues.length
     ? review.top_issues.map(issueCard).join("")
@@ -884,12 +960,17 @@ function renderReview(data) {
         '<td>' + esc(o.deadline || "—") + '</td>' +
         '<td><span class="pill">' + esc(o.category) + '</span></td>' +
         '<td>' + (o.grounded ? '<span class="pill good">verified</span>' : '<span class="pill warn" title="Could not find this exact wording in the document">unverified</span>') + '</td>' +
+        '<td>' + (o.evidence_chunk_index !== null && o.evidence_chunk_index !== undefined
+          ? '<button class="linkish" onclick="goToClause(' + o.evidence_chunk_index + ')">View →</button>' : "—") + '</td>' +
       '</tr>').join("")
-    : '<tr><td colspan="5" class="none">No obligations extracted.</td></tr>';
+    : '<tr><td colspan="6" class="none">No obligations extracted.</td></tr>';
 
-  const coverageRows = coverage.results.map(r => '<div class="scanline" style="margin-bottom:6px;">' +
+  const coverageRows = coverage.results.map(r => '<div class="scanline" style="margin-bottom:6px;align-items:center;">' +
     '<span class="pill ' + (r.status === "found" ? "good" : (r.importance === "high" ? "warn" : "")) + '">' +
-    esc(r.label) + ': ' + (r.status === "found" ? "found" : "not found") + '</span></div>').join("");
+    esc(r.label) + ': ' + (r.status === "found" ? "found" : "not found") + '</span>' +
+    (r.status === "found" && r.evidence_chunk_index !== null
+      ? '<button class="linkish" onclick="goToClause(' + r.evidence_chunk_index + ')">View →</button>' : "") +
+    '</div>').join("");
 
   body.innerHTML = `
     <h3 style="font-family:var(--serif);font-size:18px;margin:0 0 4px;">Top issues to review</h3>
@@ -904,7 +985,7 @@ function renderReview(data) {
     <h3 style="font-family:var(--serif);font-size:18px;margin:0 0 8px;">Obligations &amp; important dates</h3>
     <div style="overflow-x:auto;margin-bottom:20px;">
       <table>
-        <thead><tr><th>Party</th><th>Obligation</th><th>Deadline</th><th>Category</th><th>Grounding</th></tr></thead>
+        <thead><tr><th>Party</th><th>Obligation</th><th>Deadline</th><th>Category</th><th>Grounding</th><th>Source</th></tr></thead>
         <tbody>${obligationRows}</tbody>
       </table>
     </div>
@@ -914,6 +995,45 @@ function renderReview(data) {
     <div>${coverageRows}</div>
     <div class="disclaimer">"Not found" means this scan's patterns didn't match anything -- it is not proof the contract lacks that protection, only that it's worth checking yourself.</div>
   `;
+}
+
+/* ---------------- document (click-to-source target) ---------------- */
+const documentCache = {};   // doc_id -> clauses[]
+
+async function loadDocument(id, jumpToClause) {
+  const body = document.getElementById("documentBody");
+  if (documentCache[id]) {
+    renderDocument(documentCache[id], jumpToClause);
+    return;
+  }
+  body.innerHTML = '<div class="skel"><div style="width:30%"></div><div style="width:95%"></div><div style="width:88%"></div><div style="width:92%"></div></div>';
+  try {
+    const { clauses } = await api("/documents/" + id + "/clauses");
+    documentCache[id] = clauses;
+    if (currentId === id) renderDocument(clauses, jumpToClause);
+  } catch (e) { body.innerHTML = '<p class="none">' + esc(e.message) + '</p>'; }
+}
+
+function renderDocument(clauses, jumpToClause) {
+  const body = document.getElementById("documentBody");
+  body.innerHTML = clauses.map(c => `
+    <div class="clause" id="clause-${c.index}">
+      ${c.heading ? '<div class="clause-heading">' + esc(c.heading) + '</div>' : ""}
+      <div class="clause-text">${esc(c.text)}</div>
+    </div>`).join("");
+
+  if (jumpToClause !== null && jumpToClause !== undefined) {
+    const target = document.getElementById("clause-" + jumpToClause);
+    if (target) {
+      // rAF so the browser has laid out the freshly-inserted clauses
+      // before we ask it to scroll to one of them.
+      requestAnimationFrame(() => {
+        target.scrollIntoView({ behavior: "smooth", block: "center" });
+        target.classList.add("clause-flash");
+        setTimeout(() => target.classList.remove("clause-flash"), 2000);
+      });
+    }
+  }
 }
 
 /* ---------------- summary ---------------- */
@@ -1130,6 +1250,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       const gone = currentId;
       await api("/documents/" + gone, { method: "DELETE" });
       delete riskCache[gone]; delete sumCache[gone]; delete chatCache[gone];
+      delete reviewCache[gone]; delete documentCache[gone];
       currentId = null;
       await loadDocs();
       toast("Document removed.");

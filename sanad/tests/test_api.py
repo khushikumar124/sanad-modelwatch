@@ -97,6 +97,32 @@ def test_risks_endpoint_returns_a_report(uploaded_doc_id):
     assert "findings" in body and "counts" in body and "clauses_scanned" in body
 
 
+def test_clauses_endpoint_returns_the_document_in_order(uploaded_doc_id):
+    res = client.get(f"/api/documents/{uploaded_doc_id}/clauses")
+    assert res.status_code == 200
+    clauses = res.json()["clauses"]
+    assert len(clauses) > 0
+    indices = [c["index"] for c in clauses]
+    assert indices == sorted(indices)
+    assert all(c["text"] for c in clauses)
+
+
+def test_clauses_indices_match_risk_finding_chunk_indices(uploaded_doc_id):
+    """A risk finding's chunk_index must refer to a real clause returned
+    by /clauses -- this is the contract the click-to-source UI depends
+    on: both endpoints must chunk the same stored text the same way."""
+    risks = client.get(f"/api/documents/{uploaded_doc_id}/risks").json()
+    clauses = client.get(f"/api/documents/{uploaded_doc_id}/clauses").json()["clauses"]
+    clause_indices = {c["index"] for c in clauses}
+    for finding in risks["findings"]:
+        assert finding["chunk_index"] in clause_indices
+
+
+def test_clauses_unknown_document_returns_404():
+    res = client.get("/api/documents/does-not-exist/clauses")
+    assert res.status_code == 404
+
+
 FREELANCE_DOC = "sanad/sample_docs/freelance/freelance_agreement_sample2.pdf"
 
 

@@ -43,6 +43,7 @@ import logging
 import re
 from dataclasses import dataclass, field
 
+from sanad.ingestion.chunking import Chunk, chunk_document
 from sanad.rag.llm_client import LLMClient
 
 logger = logging.getLogger(__name__)
@@ -128,17 +129,51 @@ def _content_words(text: str) -> list[str]:
     return [w for w in _WORD_RE.findall(text.lower()) if w not in _STOPWORDS and len(w) > 1]
 
 
-def _is_grounded(source_quote: str, normalized_doc: str) -> bool:
+def _overlap_ratio(quote_words: list[str], chunk_words: set[str]) -> float:
+    if not quote_words:
+        return 0.0
+    matched = sum(1 for w in quote_words if w in chunk_words)
+    return matched / len(quote_words)
+
+
+def _find_evidence_chunk(source_quote: str, chunks: list[Chunk], normalized_doc: str) -> tuple[bool, int | None]:
+    """Checks source_quote against each chunk individually (not just the
+    whole document at once) so a grounded obligation also records *which*
+    clause supports it -- this is what lets the UI jump straight to the
+    clause instead of only saying "somewhere in this document".
+
+    Falls back to a whole-document check (chunk_index left None) for the
+    rare quote that straddles a chunk boundary -- clause-aware chunking
+    (sanad/ingestion/chunking.py) keeps this uncommon, but a boundary
+    case should still be recognised as grounded, just not localized.
+    """
     if not source_quote:
-        return False
-    if _normalize(source_quote) in normalized_doc:
-        return True
+        return False, None
+    normalized_quote = _normalize(source_quote)
+
+    for chunk in chunks:
+        if normalized_quote in _normalize(chunk.text):
+            return True, chunk.index
+
     quote_words = _content_words(source_quote)
-    if len(quote_words) < _MIN_CONTENT_WORDS:
-        return False  # too few content words for overlap to mean anything
-    doc_words = set(_content_words(normalized_doc))
-    matched = sum(1 for w in quote_words if w in doc_words)
-    return (matched / len(quote_words)) >= _OVERLAP_THRESHOLD
+    if len(quote_words) >= _MIN_CONTENT_WORDS:
+        best_ratio, best_index = 0.0, None
+        for chunk in chunks:
+            ratio = _overlap_ratio(quote_words, set(_content_words(chunk.text)))
+            if ratio > best_ratio:
+                best_ratio, best_index = ratio, chunk.index
+        if best_ratio >= _OVERLAP_THRESHOLD:
+            return True, best_index
+
+    # Boundary-spanning fallback: not localizable to one chunk, but still
+    # check whether it's grounded in the document as a whole.
+    if normalized_quote in normalized_doc:
+        return True, None
+    if len(quote_words) >= _MIN_CONTENT_WORDS:
+        doc_ratio = _overlap_ratio(quote_words, set(_content_words(normalized_doc)))
+        if doc_ratio >= _OVERLAP_THRESHOLD:
+            return True, None
+    return False, None
 
 
 @dataclass
@@ -149,6 +184,11 @@ class Obligation:
     category: str
     source_quote: str
     grounded: bool
+    #: which clause (sanad.ingestion.chunking chunk index) supports this
+    #: obligation, when localizable -- lets the UI jump straight to it.
+    #: None for an ungrounded obligation, or a grounded one whose quote
+    #: happened to straddle a chunk boundary (see _find_evidence_chunk).
+    evidence_chunk_index: int | None = None
 
     def to_dict(self) -> dict:
         return {
@@ -158,6 +198,7 @@ class Obligation:
             "category": self.category,
             "source_quote": self.source_quote,
             "grounded": self.grounded,
+            "evidence_chunk_index": self.evidence_chunk_index,
         }
 
 
@@ -179,7 +220,7 @@ class ObligationsReport:
         }
 
 
-def _parse_obligations(raw: str, document_text: str) -> ObligationsReport:
+def _parse_obligations(raw: str, chunks: list[Chunk], document_text: str) -> ObligationsReport:
     candidate = raw.strip()
     try:
         data = json.loads(candidate)
@@ -217,7 +258,7 @@ def _parse_obligations(raw: str, document_text: str) -> ObligationsReport:
 
         category = item.get("category") if item.get("category") in CATEGORIES else "other"
         source_quote = str(item.get("source_quote") or "")
-        grounded = _is_grounded(source_quote, normalized_doc)
+        grounded, evidence_chunk_index = _find_evidence_chunk(source_quote, chunks, normalized_doc)
         obligations.append(
             Obligation(
                 party=party,
@@ -226,6 +267,7 @@ def _parse_obligations(raw: str, document_text: str) -> ObligationsReport:
                 category=category,
                 source_quote=source_quote,
                 grounded=grounded,
+                evidence_chunk_index=evidence_chunk_index,
             )
         )
     return ObligationsReport(obligations=obligations)
@@ -247,4 +289,5 @@ def extract_obligations(document_text: str, llm_client: LLMClient) -> Obligation
         response_schema=OBLIGATIONS_SCHEMA,
         timeout=EXTRACTION_TIMEOUT_SECONDS,
     )
-    return _parse_obligations(raw, document_text)
+    chunks = chunk_document(document_text)
+    return _parse_obligations(raw, chunks, document_text)
