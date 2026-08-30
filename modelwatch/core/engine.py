@@ -10,6 +10,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Callable
 
+from modelwatch.alerts.notifier import notify_alert
 from modelwatch.config import config
 from modelwatch.core.adapter_base import ModelAdapter
 from modelwatch.core.health import next_health_state
@@ -133,6 +134,7 @@ class MonitoringEngine:
             )
             alert_id = self._storage.create_alert(model_id, run_id, message)
             logger.warning("drift alert raised", extra={"model_id": model_id, "run_id": run_id})
+            notify_alert(model_id, message, transition.state)
         elif transition.should_resolve_alerts:
             resolved = self._storage.resolve_alerts_for_model(model_id)
             if resolved:

@@ -14,7 +14,8 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0", "pytest-httpserver>=1.0"]
+langchain = ["langchain-core>=0.3"]
+dev = ["pytest>=8.0", "pytest-httpserver>=1.0", "langchain-core>=0.3"]
 
 [tool.setuptools.packages.find]
 include = ["modelwatch_client*"]

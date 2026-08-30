@@ -44,6 +44,30 @@ traces specifically, see `sanad/features/trace.py` and
 `sanad/api/telemetry.py` in the main repo for the exact shape Sanad
 sends; anything producing the same shape works identically.
 
+## LangChain integration
+
+If your RAG app is built on LangChain, you don't need to hand-build
+events at all:
+
+```python
+from modelwatch_client import ModelWatchClient
+from modelwatch_client.integrations.langchain import ModelWatchCallbackHandler
+
+client = ModelWatchClient("http://localhost:8000")
+handler = ModelWatchCallbackHandler(client, model_id="my-rag-app")
+
+# pass it like any other LangChain callback
+chain.invoke({"question": "..."}, config={"callbacks": [handler]})
+```
+
+It reports retrieval latency, generation latency, retrieved-document
+count, and any similarity scores your retriever already attaches to
+document metadata -- automatically, on every chain run, with no changes
+to the chain itself. Content (the query and answer) is excluded by
+default; pass `include_content=True` to send it.
+
+Requires `langchain-core` (`pip install "modelwatch-client[langchain]"`).
+
 ## What this is not
 
 This is not a replacement for `modelwatch/examples/telemetry_reporter.py`

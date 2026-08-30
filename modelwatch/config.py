@@ -84,6 +84,14 @@ class Config:
     health_degraded_after_consecutive: int = _int_env("MODELWATCH_DEGRADED_AFTER_CONSECUTIVE", 1)
     health_recovery_after_consecutive: int = _int_env("MODELWATCH_RECOVERY_AFTER_CONSECUTIVE", 1)
 
+    # Alert delivery (modelwatch/alerts/notifier.py). Unset by default --
+    # a fresh install stays silent rather than failing to reach a webhook
+    # nobody configured. Set MODELWATCH_ALERT_WEBHOOK_URL to a Slack
+    # Incoming Webhook URL (with format left as "slack") or any generic
+    # webhook receiver's URL (format "generic").
+    alert_webhook_url: str = os.environ.get("MODELWATCH_ALERT_WEBHOOK_URL", "")
+    alert_webhook_format: str = os.environ.get("MODELWATCH_ALERT_WEBHOOK_FORMAT", "slack")
+
     # Default logging level for library/service code.
     log_level: str = os.environ.get("MODELWATCH_LOG_LEVEL", "INFO")
 
