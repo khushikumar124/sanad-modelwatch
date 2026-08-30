@@ -549,7 +549,7 @@ print(result["is_drifted"], result["drift_score"], result["signals"])</pre></div
   <section class="page" data-page="counterfactual">
     <div class="page-head">
       <h1>Counterfactual Experiments</h1>
-      <div class="sub">Runs the same real evaluation dataset through Sanad's real pipeline at several top_k values, on the same index -- so any difference is attributable to top_k, not to different indexing. Requires Ollama. Scoped to top_k only for now; comparing chunk size or embedding model would need re-indexing per variant, not yet implemented.</div>
+      <div class="sub">Runs the same real evaluation dataset through Sanad's real pipeline under different configurations, on the same index -- so any difference is attributable to the thing being varied, not to different indexing. Requires Ollama. Scoped to top_k and model choice, both of which can share one index; comparing chunk size or embedding model would need re-indexing per variant, not yet implemented.</div>
     </div>
     <div class="panel">
       <h2>Compare top_k values</h2>
@@ -563,6 +563,18 @@ print(result["is_drifted"], result["drift_score"], result["signals"])</pre></div
       <div id="cfStatus" style="margin-top:12px;"></div>
     </div>
     <div id="cfResult"></div>
+
+    <div class="panel">
+      <h2>Compare models <span class="note">Model Comparison -- same harness, varies which installed Ollama model generates the answer</span></h2>
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+        <input id="cmModels" type="text" value="phi3:3.8b,qwen2.5:0.5b" style="width:220px;background:var(--panel-2);border:1px solid var(--line);border-radius:6px;padding:7px 11px;font-family:var(--mono);font-size:12px;color:var(--text);" placeholder="phi3:3.8b,qwen2.5:0.5b" />
+        <span style="color:var(--text-3);font-size:11px;">comma-separated Ollama model names, 2-4 -- must already be pulled (<code>ollama list</code>)</span>
+        <input id="cmNCases" type="number" min="1" max="22" value="8" style="width:60px;background:var(--panel-2);border:1px solid var(--line);border-radius:6px;padding:7px 11px;font-family:var(--mono);font-size:12px;color:var(--text);" />
+        <button class="linklike" id="cmRunBtn" style="border:1px solid var(--teal);border-radius:6px;padding:6px 14px;color:var(--teal);text-decoration:none;">Run comparison</button>
+      </div>
+      <div id="cmStatus" style="margin-top:12px;"></div>
+    </div>
+    <div id="cmResult"></div>
   </section>
 
   <section class="page" data-page="registry">
@@ -1487,33 +1499,88 @@ async function runCounterfactual() {
   }, 3000);
 }
 
-function renderCounterfactualResult(result) {
+function renderVariantComparisonTable(targetElementId, result, variantKey, variantLabelPrefix, tradeoffNote) {
   const variants = result.variants;
-  const header = '<tr><th>Metric</th>' + variants.map(v => `<th>top_k=${v.top_k}</th>`).join("") + '<th>Best</th></tr>';
+  const header = '<tr><th>Metric</th>' + variants.map(v => `<th>${esc(variantLabelPrefix)}${esc(String(v[variantKey]))}</th>`).join("") + '<th>Best</th></tr>';
   const rows = CF_METRICS.map(([key, higherBetter]) => {
     const values = variants.map(v => v.summary[key]);
     const best = higherBetter ? Math.max(...values) : Math.min(...values);
     const cells = values.map(v => `<td>${f3(v)}</td>`).join("");
     const bestVariant = variants[values.indexOf(best)];
-    return `<tr><td>${esc(key)}</td>${cells}<td>top_k=${bestVariant.top_k}</td></tr>`;
+    return `<tr><td>${esc(key)}</td>${cells}<td>${esc(variantLabelPrefix)}${esc(String(bestVariant[variantKey]))}</td></tr>`;
   }).join("");
 
-  document.getElementById("cfResult").innerHTML = `
+  document.getElementById(targetElementId).innerHTML = `
     <div class="panel">
       <h2>Quality/latency tradeoff <span class="note">${result.n_cases} case(s), real measurements from this run</span></h2>
       <table>
         <thead>${header}</thead>
         <tbody>${rows}</tbody>
       </table>
-      <div class="explain" style="margin-top:12px;">
-        <p>"Best" is per-metric independently -- a higher top_k typically improves retrieval_hit_rate/citation_correctness
-        (more chances to retrieve the right chunk) at the cost of latency (more context for the model to process). There is
-        no single "best" top_k across all metrics; this table is meant to make that tradeoff visible, not resolve it.</p>
-      </div>
+      <div class="explain" style="margin-top:12px;"><p>${tradeoffNote}</p></div>
     </div>`;
 }
 
+function renderCounterfactualResult(result) {
+  renderVariantComparisonTable("cfResult", result, "top_k", "top_k=",
+    "\"Best\" is per-metric independently -- a higher top_k typically improves retrieval_hit_rate/citation_correctness " +
+    "(more chances to retrieve the right chunk) at the cost of latency (more context for the model to process). There is " +
+    "no single \"best\" top_k across all metrics; this table is meant to make that tradeoff visible, not resolve it.");
+}
+
 document.getElementById("cfRunBtn").addEventListener("click", runCounterfactual);
+
+/* ---------------- model comparison ---------------- */
+let cmPollTimer = null;
+
+async function runModelComparison() {
+  const models = document.getElementById("cmModels").value;
+  const nCases = document.getElementById("cmNCases").value;
+  const statusBox = document.getElementById("cmStatus");
+  const resultBox = document.getElementById("cmResult");
+  const btn = document.getElementById("cmRunBtn");
+
+  if (cmPollTimer) clearInterval(cmPollTimer);
+  resultBox.innerHTML = "";
+  btn.textContent = "Running…";
+
+  let jobId;
+  try {
+    const started = await (await fetch(`/counterfactual/run-models?models=${encodeURIComponent(models)}&n_cases=${nCases}`, { method: "POST" })).json();
+    if (started.detail) throw new Error(started.detail);
+    jobId = started.job_id;
+  } catch (e) {
+    statusBox.innerHTML = '<div class="empty">' + esc(e.message) + '</div>';
+    btn.textContent = "Run comparison";
+    return;
+  }
+
+  statusBox.innerHTML = '<div class="explain"><p>Running each model against Ollama in turn -- this can take a while, more so for larger models.</p></div>';
+
+  cmPollTimer = setInterval(async () => {
+    let job;
+    try {
+      job = await (await fetch(`/counterfactual/jobs/${jobId}`)).json();
+    } catch (e) { return; }
+
+    statusBox.innerHTML = `<div class="explain"><p>Status: <b>${esc(job.status)}</b> -- ${job.elapsed_seconds}s elapsed</p></div>`;
+
+    if (job.status === "done") {
+      clearInterval(cmPollTimer);
+      btn.textContent = "Run comparison";
+      renderVariantComparisonTable("cmResult", job.result, "model", "",
+        "\"Best\" is per-metric independently -- a larger model typically improves grounding/citation quality at the cost " +
+        "of latency. There is no single \"best\" model across all metrics; this table is meant to make that tradeoff " +
+        "visible, not resolve it.");
+    } else if (job.status === "error") {
+      clearInterval(cmPollTimer);
+      btn.textContent = "Run comparison";
+      statusBox.innerHTML = '<div class="empty">Comparison failed: ' + esc(job.error || "unknown error") + '</div>';
+    }
+  }, 3000);
+}
+
+document.getElementById("cmRunBtn").addEventListener("click", runModelComparison);
 
 /* ---------------- connect your model ---------------- */
 async function loadConnectStatus() {

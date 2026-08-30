@@ -313,6 +313,31 @@ def get_counterfactual_job(job_id: str):
     return job.to_dict()
 
 
+def _run_model_comparison(model_names: list[str], n_cases: int) -> dict:
+    from modelwatch.experiments import counterfactual
+    from sanad.evaluation.dataset import load_dataset
+
+    cases = load_dataset(counterfactual.DEFAULT_DATASET)[:n_cases]
+    result = counterfactual.compare_models(cases, model_names)
+    return result.to_dict()
+
+
+@app.post("/counterfactual/run-models", status_code=202)
+def start_model_comparison_run(models: str, n_cases: int = 5):
+    """models is a comma-separated list of Ollama model names actually
+    installed locally (see `ollama list`) -- this does not validate
+    they exist before running; a missing one surfaces as a real error
+    on that variant's job result, not a fabricated one. Polls through
+    the same GET /counterfactual/jobs/{job_id} as top_k comparisons."""
+    model_names = [m.strip() for m in models.split(",") if m.strip()]
+    if not 2 <= len(model_names) <= 4:
+        raise HTTPException(status_code=400, detail="provide between 2 and 4 model names to compare")
+    if not 1 <= n_cases <= 22:
+        raise HTTPException(status_code=400, detail="n_cases must be between 1 and 22")
+    job_id = drift_lab_jobs.submit("model_comparison", lambda: _run_model_comparison(model_names, n_cases))
+    return {"job_id": job_id}
+
+
 @app.get("/config")
 def get_config():
     """Read-only view of the thresholds/parameters that actually govern

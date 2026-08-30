@@ -167,3 +167,47 @@ def test_counterfactual_accepting_a_valid_request_returns_a_pollable_job_id(clie
         time.sleep(0.05)
     assert status["status"] == "done", status
     assert [v["top_k"] for v in status["result"]["variants"]] == [4, 6]
+
+
+# -- Model comparison endpoint --------------------------------------------
+
+
+def test_model_comparison_rejects_too_few_models(client):
+    res = client.post("/counterfactual/run-models?models=phi3:3.8b")
+    assert res.status_code == 400
+
+
+def test_model_comparison_rejects_too_many_models(client):
+    res = client.post("/counterfactual/run-models?models=a,b,c,d,e")
+    assert res.status_code == 400
+
+
+def test_model_comparison_rejects_n_cases_out_of_range(client):
+    assert client.post("/counterfactual/run-models?models=a,b&n_cases=0").status_code == 400
+    assert client.post("/counterfactual/run-models?models=a,b&n_cases=23").status_code == 400
+
+
+def test_model_comparison_accepting_a_valid_request_returns_a_pollable_job_id(client, monkeypatch):
+    import time
+
+    from modelwatch.experiments import counterfactual
+
+    def fake_compare_models(cases, model_names, chroma_path=None):
+        return counterfactual.CounterfactualResult(
+            n_cases=0, variants=[{"model": m, "summary": {}} for m in model_names]
+        )
+
+    monkeypatch.setattr(counterfactual, "compare_models", fake_compare_models)
+    monkeypatch.setattr("sanad.evaluation.dataset.load_dataset", lambda path: [])
+
+    res = client.post("/counterfactual/run-models?models=phi3:3.8b,qwen2.5:0.5b&n_cases=1")
+    assert res.status_code == 202
+    job_id = res.json()["job_id"]
+
+    for _ in range(50):
+        status = client.get(f"/counterfactual/jobs/{job_id}").json()
+        if status["status"] in ("done", "error"):
+            break
+        time.sleep(0.05)
+    assert status["status"] == "done", status
+    assert [v["model"] for v in status["result"]["variants"]] == ["phi3:3.8b", "qwen2.5:0.5b"]
