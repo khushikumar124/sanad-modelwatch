@@ -48,6 +48,11 @@ class Config:
     # a retrieval miss that looks exactly like a model failure. Raising
     # this costs prompt length (and so latency) per question.
     retrieval_top_k: int = _int_env("SANAD_RETRIEVAL_TOP_K", 6)
+    # "hybrid" (default): fuse dense (embedding cosine) and sparse (BM25
+    # lexical) rankings via reciprocal rank fusion -- catches exact-term
+    # queries (a defined term, a clause number) that embeddings alone can
+    # underweight. "dense": the original embedding-only behavior.
+    retrieval_mode: str = os.environ.get("SANAD_RETRIEVAL_MODE", "hybrid")
 
     # API / server. Binds loopback by default: this app holds uploaded
     # contracts, and 0.0.0.0 would expose them to everyone on the local
