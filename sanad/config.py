@@ -35,6 +35,13 @@ class Config:
     chroma_db_path: str = os.environ.get("SANAD_CHROMA_DB_PATH", "sanad_chroma_db")
     chroma_collection: str = os.environ.get("SANAD_CHROMA_COLLECTION", "contracts")
 
+    # Document registry (sanad/db.py). Defaults to a local SQLite file --
+    # needs nothing installed for a fresh `./run.sh`. Point this at a real
+    # Postgres instance (e.g. postgresql+psycopg://user:pass@host/sanad)
+    # the moment this runs on more than one machine; SQLite's per-process
+    # file lock is the ceiling that migration removes.
+    database_url: str = os.environ.get("SANAD_DATABASE_URL", "sqlite:///sanad_documents.db")
+
     # Retrieval. 6 rather than 4: measured on a real lease, the clause
     # answering "what is the term of this lease?" ranked 6th, so a top-4
     # window silently starved the model of the answer and it refused --

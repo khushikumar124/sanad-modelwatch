@@ -13,6 +13,7 @@ import uuid
 _TEST_ID = uuid.uuid4().hex
 os.environ.setdefault("SANAD_CHROMA_DB_PATH", f"/tmp/sanad_test_chroma_{_TEST_ID}")
 os.environ.setdefault("SANAD_UPLOAD_DIR", f"/tmp/sanad_test_uploads_{_TEST_ID}")
+os.environ.setdefault("SANAD_DATABASE_URL", f"sqlite:////tmp/sanad_test_documents_{_TEST_ID}.db")
 
 import pytest
 from fastapi.testclient import TestClient

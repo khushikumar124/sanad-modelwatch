@@ -2,22 +2,18 @@
 
 Thin HTTP layer over the shared ingestion pipeline and the two features.
 
-Ingested documents live in an in-memory registry keyed by doc_id, backed
-by a small JSON record written next to each uploaded file. The registry is
-rebuilt from those records at startup, so a restart doesn't invalidate a
-doc_id that a browser is still holding -- previously that surfaced as
-"document ... not found" on a document the user had just uploaded
-successfully. Chunks and embeddings already persist in ChromaDB, so
-nothing is re-extracted or re-embedded on restore.
+Ingested documents live in a real database (sanad/db.py), not an
+in-memory dict -- a restart doesn't invalidate a doc_id a browser is
+still holding, and (unlike the in-memory-dict-plus-JSON-sidecar-file
+registry this replaced) more than one process can see the same
+documents. Chunks and embeddings already persist in ChromaDB, so
+nothing is re-extracted or re-embedded when a document is looked up.
 """
 from __future__ import annotations
 
-import json
 import logging
 import time
 import uuid
-from dataclasses import asdict, dataclass
-from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, Response, UploadFile
@@ -25,6 +21,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
+from sanad import db
 from sanad.api.auth import COOKIE_NAME, authenticate, create_session, current_user, require_user
 from sanad.api import telemetry
 from sanad.api.schemas import (
@@ -57,7 +54,7 @@ from sanad.jobs import jobs
 from sanad.ingestion.chunking import chunk_document
 from sanad.ingestion.extraction import IMAGE_EXTENSIONS
 from sanad.rag.llm_client import LLMConnectionError, OllamaClient
-from sanad.rag.pipeline import IngestedDocument, ingest_document
+from sanad.rag.pipeline import ingest_document
 from sanad.rag.vector_store import VectorStore
 
 logging.basicConfig(
@@ -81,86 +78,6 @@ if config.auth_enabled and not config.session_secret:
     )
 
 
-@dataclass
-class DocumentRecord:
-    """What the API needs to serve an already-ingested document.
-
-    Kept flat and JSON-serializable rather than wrapping IngestedDocument,
-    so a record can be written to disk on upload and read back on startup
-    without re-running extraction or re-embedding.
-    """
-
-    doc_id: str
-    filename: str
-    contract_type: str | None
-    chunk_count: int
-    used_ocr: bool
-    uploaded_at: str
-    text: str
-    source_path: str
-
-    def to_response(self) -> DocumentResponse:
-        return DocumentResponse(
-            doc_id=self.doc_id,
-            filename=self.filename,
-            contract_type=self.contract_type,
-            chunk_count=self.chunk_count,
-            used_ocr=self.used_ocr,
-            uploaded_at=self.uploaded_at,
-        )
-
-    @classmethod
-    def from_ingested(
-        cls, ingested: IngestedDocument, filename: str, contract_type: str | None
-    ) -> "DocumentRecord":
-        return cls(
-            doc_id=ingested.doc_id,
-            filename=filename,
-            contract_type=contract_type,
-            chunk_count=len(ingested.chunks),
-            used_ocr=ingested.used_ocr,
-            uploaded_at=datetime.now(timezone.utc).isoformat(),
-            text=ingested.text,
-            source_path=ingested.source_path,
-        )
-
-
-documents: dict[str, DocumentRecord] = {}
-
-
-def _sidecar_path(doc_id: str) -> Path:
-    return Path(config.upload_dir) / f"{doc_id}.json"
-
-
-def _persist(record: DocumentRecord) -> None:
-    """Write a record beside its uploaded file.
-
-    Without this the registry is process-memory only, so restarting the
-    server silently invalidates every doc_id a browser is already holding
-    -- the user sees "document ... not found" on a document they just
-    uploaded successfully. The chunks themselves already persist in
-    ChromaDB; this is the metadata and extracted text that went with them.
-    """
-    try:
-        _sidecar_path(record.doc_id).write_text(json.dumps(asdict(record)))
-    except OSError as e:
-        logger.warning("could not persist document record", extra={"doc_id": record.doc_id, "err": str(e)})
-
-
-def _restore_documents() -> None:
-    upload_dir = Path(config.upload_dir)
-    if not upload_dir.is_dir():
-        return
-    for sidecar in upload_dir.glob("*.json"):
-        try:
-            documents[sidecar.stem] = DocumentRecord(**json.loads(sidecar.read_text()))
-        except (OSError, ValueError, TypeError) as e:
-            logger.warning("skipping unreadable record", extra={"file": sidecar.name, "err": str(e)})
-    if documents:
-        logger.info("restored documents from disk", extra={"count": len(documents)})
-
-_restore_documents()
-
 app = FastAPI(title="Sanad API")
 # The frontend is served from this same origin, so no cross-origin access is
 # needed. A wildcard here would let any page you visit drive this API with
@@ -174,8 +91,8 @@ app.add_middleware(
 )
 
 
-def _get_record(doc_id: str) -> DocumentRecord:
-    record = documents.get(doc_id)
+def _get_record(doc_id: str) -> db.DocumentRecord:
+    record = db.get_document(doc_id)
     if record is None:
         raise HTTPException(status_code=404, detail=f"document '{doc_id}' not found")
     return record
@@ -240,11 +157,10 @@ async def upload_document(
     dest.write_bytes(await file.read())
 
     ingested = ingest_document(str(dest), doc_id, vector_store)
-    record = DocumentRecord.from_ingested(
+    record = db.DocumentRecord.from_ingested(
         ingested, filename=file.filename or dest.name, contract_type=contract_type
     )
-    documents[doc_id] = record
-    _persist(record)
+    db.save_document(record)
 
     logger.info("document uploaded", extra={"doc_id": doc_id, "doc_filename": record.filename})
     return record.to_response()
@@ -252,7 +168,7 @@ async def upload_document(
 
 @app.get("/api/documents", response_model=list[DocumentResponse])
 def list_documents(_user: str | None = Depends(require_user)):
-    return [r.to_response() for r in documents.values()]
+    return [r.to_response() for r in db.list_documents()]
 
 
 @app.get("/api/documents/{doc_id}", response_model=DocumentResponse)
@@ -265,8 +181,7 @@ def delete_document(doc_id: str, _user: str | None = Depends(require_user)):
     record = _get_record(doc_id)
     vector_store.delete_document(doc_id)
     Path(record.source_path).unlink(missing_ok=True)
-    _sidecar_path(doc_id).unlink(missing_ok=True)
-    del documents[doc_id]
+    db.delete_document(doc_id)
 
 
 @app.post("/api/documents/{doc_id}/summarize", response_model=SummaryResponse)

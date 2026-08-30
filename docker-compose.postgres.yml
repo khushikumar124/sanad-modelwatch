@@ -1,0 +1,31 @@
+# Optional: a real local Postgres instance for Sanad's document registry
+# (sanad/db.py), for anyone who wants to run against Postgres instead of
+# the zero-config SQLite default. Not required for the normal ./run.sh
+# flow -- SQLite needs nothing installed and is still the default.
+#
+#   docker compose -f docker-compose.postgres.yml up -d
+#   export SANAD_DATABASE_URL="postgresql+psycopg://sanad:sanad@localhost:5432/sanad"
+#   ./run.sh
+#
+# Verified against a real local Postgres 16 instance during development
+# (see docs/architecture.md) -- this compose file is the convenient way
+# to get the same thing without hand-running initdb/pg_ctl.
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: sanad
+      POSTGRES_PASSWORD: sanad
+      POSTGRES_DB: sanad
+    ports:
+      - "5432:5432"
+    volumes:
+      - sanad_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sanad"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  sanad_postgres_data:
