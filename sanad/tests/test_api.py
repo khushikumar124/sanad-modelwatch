@@ -152,6 +152,57 @@ def test_compare_with_unknown_document_returns_404(uploaded_doc_id):
     assert res.status_code == 404
 
 
+def test_cross_chat_requires_at_least_two_documents(uploaded_doc_id):
+    res = client.post("/api/documents/cross-chat", json={"doc_ids": [uploaded_doc_id], "question": "anything"})
+    assert res.status_code == 400
+
+
+def test_cross_chat_with_unknown_document_returns_404(uploaded_doc_id):
+    res = client.post(
+        "/api/documents/cross-chat",
+        json={"doc_ids": [uploaded_doc_id, "does-not-exist"], "question": "anything"},
+    )
+    assert res.status_code == 404
+
+
+def test_cross_chat_returns_503_when_llm_unreachable(uploaded_doc_id, second_doc_id, llm_unreachable):
+    res = client.post(
+        "/api/documents/cross-chat",
+        json={"doc_ids": [uploaded_doc_id, second_doc_id], "question": "compare these"},
+    )
+    assert res.status_code == 503
+
+
+def test_cross_chat_success_path_cites_chunks_from_both_documents(uploaded_doc_id, second_doc_id):
+    """Scripts the app's LLM client directly (rather than the shared
+    fake_llm_response fixture, whose canned response is shaped for the
+    obligations/review endpoints, not chat) so this success path can be
+    tested without Ollama."""
+    from sanad.api import app as app_module
+
+    class FakeClient:
+        model = "fake-model"
+
+        def generate(self, system_prompt, user_prompt, response_schema=None, timeout=180):
+            return '{"grounded": true, "answer": "They differ.", "cited_excerpts": [1, 5]}'
+
+    original = app_module.llm_client
+    app_module.llm_client = FakeClient()
+    try:
+        res = client.post(
+            "/api/documents/cross-chat",
+            json={"doc_ids": [uploaded_doc_id, second_doc_id], "question": "compare notice periods"},
+        )
+    finally:
+        app_module.llm_client = original
+
+    assert res.status_code == 200
+    body = res.json()
+    assert body["grounded"] is True
+    doc_ids_cited = {c["doc_id"] for c in body["cited_chunks"]}
+    assert doc_ids_cited == {uploaded_doc_id, second_doc_id}
+
+
 @pytest.fixture
 def llm_unreachable():
     """Point the app's LLM client at a port with no listener.

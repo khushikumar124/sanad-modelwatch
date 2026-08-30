@@ -30,6 +30,8 @@ from sanad.api.schemas import (
     ClausesResponse,
     ComparisonResponse,
     CoverageResponse,
+    CrossChatRequest,
+    CrossChatResponse,
     DocumentResponse,
     LoginRequest,
     ObligationsResponse,
@@ -43,6 +45,7 @@ from sanad.api.schemas import (
 from sanad.config import config
 from sanad.features.chatbot import ask
 from sanad.features.comparison import compare_risk_reports
+from sanad.features.cross_document import ask_across_documents
 from sanad.features.contradictions import find_contradictions
 from sanad.features.coverage import check_coverage
 from sanad.features.obligations import extract_obligations
@@ -362,6 +365,25 @@ def chat_with_document(
         question_embedding=vector_store.embedder.embed_one(req.question) if config.telemetry_full_trace else None,
     )
     return {**result.to_dict(), "trace": trace.to_dict()}
+
+
+@app.post("/api/documents/cross-chat", response_model=CrossChatResponse)
+def cross_document_chat(req: CrossChatRequest, _user: str | None = Depends(require_user)):
+    """Grounded Q&A across more than one uploaded document -- see
+    sanad/features/cross_document.py. Kept as a separate endpoint rather
+    than an optional list on /chat: a single-document answer is what the
+    frontend's main Ask tab needs on every keystroke-adjacent request,
+    and giving it a second, rarer code path to worry about (empty
+    doc_ids, one doc_id, many) isn't worth it for what's really a
+    distinct feature (the Compare tab)."""
+    if len(req.doc_ids) < 2:
+        raise HTTPException(status_code=400, detail="cross-document chat needs at least 2 doc_ids")
+    documents = [(doc_id, _get_record(doc_id).filename) for doc_id in req.doc_ids]
+    try:
+        result = ask_across_documents(documents, req.question, vector_store, llm_client)
+    except LLMConnectionError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    return result.to_dict()
 
 
 @app.get("/api/telemetry")

@@ -573,6 +573,14 @@
               <select id="compareSelect"></select>
             </div>
             <div id="compareBody"></div>
+            <div id="crossChatSection" style="margin-top:24px;border-top:1px solid var(--line);padding-top:16px;">
+              <h4 style="margin:0 0 10px;font-size:13px;color:var(--ink-2);">Ask across both documents</h4>
+              <div style="display:flex;gap:10px;">
+                <input id="crossChatInput" type="text" placeholder="e.g. does the notice period match?" style="flex:1;" />
+                <button class="btn" id="crossChatBtn">Ask</button>
+              </div>
+              <div id="crossChatResult"></div>
+            </div>
           </div>
         </div>
         <div class="pane" id="pane-review" hidden><div class="wrap" id="reviewBody"></div></div>
@@ -870,12 +878,15 @@ function renderHeatmap(r) {
 function renderCompareSelect() {
   const sel = document.getElementById("compareSelect");
   const others = docs.filter(d => d.doc_id !== currentId);
+  const crossChatSection = document.getElementById("crossChatSection");
   if (!others.length) {
     sel.innerHTML = "";
     document.getElementById("compareBody").innerHTML =
       '<p class="none">Upload a second contract to compare against this one.</p>';
+    crossChatSection.style.display = "none";
     return;
   }
+  crossChatSection.style.display = "";
   const prev = sel.value;
   sel.innerHTML = others.map(d => '<option value="' + d.doc_id + '">' + esc(d.filename) + '</option>').join("");
   if (others.some(d => d.doc_id === prev)) sel.value = prev;
@@ -891,6 +902,32 @@ async function loadComparison() {
     const c = await api("/documents/" + currentId + "/compare/" + sel.value);
     renderComparison(c);
   } catch (e) { body.innerHTML = '<p class="none">' + esc(e.message) + '</p>'; }
+}
+
+async function askAcrossDocuments() {
+  const sel = document.getElementById("compareSelect");
+  const input = document.getElementById("crossChatInput");
+  const result = document.getElementById("crossChatResult");
+  const q = input.value.trim();
+  if (!q || !sel.value || !currentId) return;
+  const otherId = sel.value;
+  result.innerHTML = '<div class="bubble"><span class="thinking"><i></i><i></i><i></i></span></div>';
+  try {
+    const a = await api("/documents/cross-chat", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ doc_ids: [currentId, otherId], question: q }),
+    });
+    const cites = (a.cited_chunks || []).map(c =>
+      '<div class="cite-body"><div class="cite-head">' + esc(c.doc_label) + ' — ' +
+      esc(c.metadata.heading || ("clause " + c.metadata.chunk_index)) + '</div>' +
+      '<div class="cite-text">' + esc(c.text.slice(0, 240)) + (c.text.length > 240 ? "…" : "") +
+      '</div></div>').join("");
+    result.innerHTML = '<div class="bubble ' + (a.grounded ? "" : "refused") + '">' + esc(a.answer) + '</div>' +
+      (cites ? '<details class="cite"><summary>❝ ' + a.cited_chunks.length + ' clause' +
+        (a.cited_chunks.length > 1 ? "s" : "") + ' cited across both documents</summary>' + cites + '</details>' : "");
+  } catch (e) {
+    result.innerHTML = '<div class="bubble refused">' + esc(e.message) + '</div>';
+  }
 }
 
 function renderComparison(c) {
@@ -1262,6 +1299,8 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   document.getElementById("askBtn").onclick = ask;
   document.getElementById("chatInput").addEventListener("keydown", e => { if (e.key === "Enter") ask(); });
+  document.getElementById("crossChatBtn").onclick = askAcrossDocuments;
+  document.getElementById("crossChatInput").addEventListener("keydown", e => { if (e.key === "Enter") askAcrossDocuments(); });
   document.getElementById("compareSelect").onchange = loadComparison;
 
   document.getElementById("deleteBtn").onclick = async () => {

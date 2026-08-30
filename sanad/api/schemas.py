@@ -29,6 +29,19 @@ class ChatRequest(BaseModel):
     question: str
 
 
+class CrossChatRequest(BaseModel):
+    doc_ids: list[str]
+    question: str
+
+
+class CrossChatResponse(BaseModel):
+    answer: str
+    grounded: bool
+    cited_chunks: list[dict[str, Any]]
+    retrieved_chunks: list[dict[str, Any]]
+    parse_error: bool
+
+
 class SetModelRequest(BaseModel):
     model: str
 
