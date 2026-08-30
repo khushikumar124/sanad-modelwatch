@@ -53,7 +53,10 @@ logger = logging.getLogger(__name__)
 
 storage = Storage(config.db_path)
 engine = MonitoringEngine(storage)
-drift_lab_jobs = JobManager(max_workers=1)  # one at a time -- each run is a real, sequential Ollama workload
+# Shared by Drift Lab and Counterfactual Experiments -- both are real,
+# sequential Ollama workloads against the same local model, so one
+# worker (not one queue per feature) is the right amount of concurrency.
+drift_lab_jobs = JobManager(max_workers=1)
 
 app = FastAPI(title="ModelWatch API")
 app.add_middleware(
@@ -261,6 +264,49 @@ def start_drift_lab_run(scenario: str, n_cases: int = 5):
 
 @app.get("/drift-lab/jobs/{job_id}")
 def get_drift_lab_job(job_id: str):
+    job = drift_lab_jobs.get(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail=f"job '{job_id}' not found")
+    return job.to_dict()
+
+
+def _run_counterfactual(top_k_values: list[int], n_cases: int) -> dict:
+    """Runs the same real Sanad evaluation dataset under several top_k
+    values -- see modelwatch/experiments/counterfactual.py for why this
+    is scoped to top_k only (no re-indexing needed, so no risk of
+    comparing across an accidentally-different index)."""
+    from modelwatch.experiments import counterfactual
+    from sanad.evaluation.dataset import load_dataset
+    from sanad.rag.llm_client import OllamaClient
+
+    cases = load_dataset(counterfactual.DEFAULT_DATASET)[:n_cases]
+    result = counterfactual.compare_top_k(cases, OllamaClient(), top_k_values)
+    return result.to_dict()
+
+
+@app.post("/counterfactual/run", status_code=202)
+def start_counterfactual_run(top_k: str, n_cases: int = 5):
+    """top_k is a comma-separated list of ints, e.g. "4,6,8" -- query
+    params don't carry structured lists cleanly, and this avoids adding
+    a request body just to hold one list. Backgrounded for the same
+    reason as Drift Lab: len(top_k_values) x n_cases real Ollama calls
+    can take minutes."""
+    try:
+        top_k_values = [int(v.strip()) for v in top_k.split(",") if v.strip()]
+    except ValueError:
+        raise HTTPException(status_code=400, detail="top_k must be a comma-separated list of integers, e.g. '4,6,8'")
+    if not 2 <= len(top_k_values) <= 5:
+        raise HTTPException(status_code=400, detail="provide between 2 and 5 top_k values to compare")
+    if any(v < 1 or v > 20 for v in top_k_values):
+        raise HTTPException(status_code=400, detail="each top_k value must be between 1 and 20")
+    if not 1 <= n_cases <= 22:
+        raise HTTPException(status_code=400, detail="n_cases must be between 1 and 22")
+    job_id = drift_lab_jobs.submit("counterfactual", lambda: _run_counterfactual(top_k_values, n_cases))
+    return {"job_id": job_id}
+
+
+@app.get("/counterfactual/jobs/{job_id}")
+def get_counterfactual_job(job_id: str):
     job = drift_lab_jobs.get(job_id)
     if job is None:
         raise HTTPException(status_code=404, detail=f"job '{job_id}' not found")

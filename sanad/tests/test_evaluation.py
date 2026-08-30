@@ -170,6 +170,34 @@ def test_run_evaluation_end_to_end_with_fake_llm(indexed_freelance_doc):
     assert client.calls == 1
 
 
+def test_run_evaluation_top_k_override_changes_retrieved_chunk_count(indexed_freelance_doc, monkeypatch):
+    """top_k=None (the default) must behave exactly as before; passing
+    an explicit value must actually reach vector_store.query() as the
+    real top_k, not get silently dropped."""
+    store, chunks = indexed_freelance_doc
+    case = EvalCase(
+        id="topk-1", question="Is the consultant an employee?",
+        expected_answer="No.", relevant_document=SAMPLE_DOC, category="employment_status",
+        relevant_chunks=[chunks[0].index], expected_citations=[chunks[0].index],
+    )
+    response = json.dumps({"grounded": True, "answer": "No.", "cited_excerpts": [1]})
+    client = ScriptedLLMClient([response, response])
+    doc_ids = {SAMPLE_DOC: "freelance-sample-2"}
+
+    seen_top_k = []
+    original_query = store.query
+    def spying_query(doc_id, query_text, top_k=None):
+        seen_top_k.append(top_k)
+        return original_query(doc_id, query_text, top_k=top_k)
+    monkeypatch.setattr(store, "query", spying_query)
+
+    run_evaluation([case], store, client, doc_ids=doc_ids, top_k=2)
+    run_evaluation([case], store, client, doc_ids=doc_ids, top_k=None)
+
+    from sanad.config import config
+    assert seen_top_k == [2, config.retrieval_top_k]
+
+
 def test_index_documents_reuses_cached_doc_id_for_repeated_source(tmp_path):
     store = VectorStore(persist_path=str(tmp_path / "chroma"))
     cases = [
