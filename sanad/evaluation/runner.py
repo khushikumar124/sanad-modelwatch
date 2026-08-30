@@ -44,7 +44,15 @@ def run_evaluation(
     llm_client: LLMClient,
     embedder: Embedder | None = None,
     doc_ids: dict[str, str] | None = None,
+    top_k: int | None = None,
 ) -> tuple[list[CaseResult], EvalSummary]:
+    """top_k, when given, overrides config.retrieval_top_k for every
+    case in this run without touching the indexed documents -- safe to
+    vary across repeated calls against the same vector_store/doc_ids,
+    since it doesn't change what's indexed, only how many chunks are
+    retrieved per question. This is what modelwatch/experiments/
+    counterfactual.py uses to compare top_k values on the same real
+    evaluation dataset."""
     embedder = embedder or Embedder()
     doc_ids = doc_ids if doc_ids is not None else index_documents(cases, vector_store)
 
@@ -52,7 +60,7 @@ def run_evaluation(
     for case in cases:
         doc_id = doc_ids[case.relevant_document]
         started = time.perf_counter()
-        answer = ask(doc_id, case.question, vector_store, llm_client)
+        answer = ask(doc_id, case.question, vector_store, llm_client, top_k=top_k)
         latency_ms = (time.perf_counter() - started) * 1000
         results.append(score_case(case, answer, latency_ms, embedder=embedder))
 

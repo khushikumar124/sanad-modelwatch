@@ -289,6 +289,7 @@
     <div class="group-label">Experiments</div>
     <a class="nav-item" data-page="experiments">Experiment Registry</a>
     <a class="nav-item" data-page="driftlab">Drift Lab</a>
+    <a class="nav-item" data-page="counterfactual">Counterfactual Experiments</a>
   </div>
   <div class="group">
     <div class="group-label">Registry</div>
@@ -543,6 +544,25 @@ print(result["is_drifted"], result["drift_score"], result["signals"])</pre></div
       <div id="driftLabStatus" style="margin-top:12px;"></div>
     </div>
     <div id="driftLabResult"></div>
+  </section>
+
+  <section class="page" data-page="counterfactual">
+    <div class="page-head">
+      <h1>Counterfactual Experiments</h1>
+      <div class="sub">Runs the same real evaluation dataset through Sanad's real pipeline at several top_k values, on the same index -- so any difference is attributable to top_k, not to different indexing. Requires Ollama. Scoped to top_k only for now; comparing chunk size or embedding model would need re-indexing per variant, not yet implemented.</div>
+    </div>
+    <div class="panel">
+      <h2>Compare top_k values</h2>
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+        <input id="cfTopKValues" type="text" value="4,6" style="width:100px;background:var(--panel-2);border:1px solid var(--line);border-radius:6px;padding:7px 11px;font-family:var(--mono);font-size:12px;color:var(--text);" placeholder="4,6" />
+        <span style="color:var(--text-3);font-size:11px;">comma-separated, 2-5 values</span>
+        <input id="cfNCases" type="number" min="1" max="22" value="8" style="width:60px;background:var(--panel-2);border:1px solid var(--line);border-radius:6px;padding:7px 11px;font-family:var(--mono);font-size:12px;color:var(--text);" />
+        <span style="color:var(--text-3);font-size:11px;">cases (each variant runs all of them -- real LLM calls, can take minutes)</span>
+        <button class="linklike" id="cfRunBtn" style="border:1px solid var(--teal);border-radius:6px;padding:6px 14px;color:var(--teal);text-decoration:none;">Run comparison</button>
+      </div>
+      <div id="cfStatus" style="margin-top:12px;"></div>
+    </div>
+    <div id="cfResult"></div>
   </section>
 
   <section class="page" data-page="registry">
@@ -1410,6 +1430,90 @@ function renderDriftLabResult(result) {
 }
 
 document.getElementById("driftLabRunBtn").addEventListener("click", runDriftLab);
+
+/* ---------------- counterfactual experiments ----------------
+   Same job-polling pattern as Drift Lab, comparing real EvalSummary
+   metrics across top_k values from one actual run of Sanad's
+   evaluation dataset per value -- see
+   modelwatch/experiments/counterfactual.py. */
+let cfPollTimer = null;
+
+const CF_METRICS = [
+  ["retrieval_hit_rate", true], ["citation_correctness", true], ["mean_semantic_similarity", true],
+  ["refusal_rate", false], ["latency_p95_ms", false], ["retrieval_latency_p95_ms", false], ["generation_latency_p95_ms", false],
+];
+
+async function runCounterfactual() {
+  const topK = document.getElementById("cfTopKValues").value;
+  const nCases = document.getElementById("cfNCases").value;
+  const statusBox = document.getElementById("cfStatus");
+  const resultBox = document.getElementById("cfResult");
+  const btn = document.getElementById("cfRunBtn");
+
+  if (cfPollTimer) clearInterval(cfPollTimer);
+  resultBox.innerHTML = "";
+  btn.textContent = "Running…";
+
+  let jobId;
+  try {
+    const started = await (await fetch(`/counterfactual/run?top_k=${encodeURIComponent(topK)}&n_cases=${nCases}`, { method: "POST" })).json();
+    if (started.detail) throw new Error(started.detail);
+    jobId = started.job_id;
+  } catch (e) {
+    statusBox.innerHTML = '<div class="empty">' + esc(e.message) + '</div>';
+    btn.textContent = "Run comparison";
+    return;
+  }
+
+  statusBox.innerHTML = '<div class="explain"><p>Running each top_k value against Ollama in turn -- this can take a while.</p></div>';
+
+  cfPollTimer = setInterval(async () => {
+    let job;
+    try {
+      job = await (await fetch(`/counterfactual/jobs/${jobId}`)).json();
+    } catch (e) { return; }
+
+    statusBox.innerHTML = `<div class="explain"><p>Status: <b>${esc(job.status)}</b> -- ${job.elapsed_seconds}s elapsed</p></div>`;
+
+    if (job.status === "done") {
+      clearInterval(cfPollTimer);
+      btn.textContent = "Run comparison";
+      renderCounterfactualResult(job.result);
+    } else if (job.status === "error") {
+      clearInterval(cfPollTimer);
+      btn.textContent = "Run comparison";
+      statusBox.innerHTML = '<div class="empty">Comparison failed: ' + esc(job.error || "unknown error") + '</div>';
+    }
+  }, 3000);
+}
+
+function renderCounterfactualResult(result) {
+  const variants = result.variants;
+  const header = '<tr><th>Metric</th>' + variants.map(v => `<th>top_k=${v.top_k}</th>`).join("") + '<th>Best</th></tr>';
+  const rows = CF_METRICS.map(([key, higherBetter]) => {
+    const values = variants.map(v => v.summary[key]);
+    const best = higherBetter ? Math.max(...values) : Math.min(...values);
+    const cells = values.map(v => `<td>${f3(v)}</td>`).join("");
+    const bestVariant = variants[values.indexOf(best)];
+    return `<tr><td>${esc(key)}</td>${cells}<td>top_k=${bestVariant.top_k}</td></tr>`;
+  }).join("");
+
+  document.getElementById("cfResult").innerHTML = `
+    <div class="panel">
+      <h2>Quality/latency tradeoff <span class="note">${result.n_cases} case(s), real measurements from this run</span></h2>
+      <table>
+        <thead>${header}</thead>
+        <tbody>${rows}</tbody>
+      </table>
+      <div class="explain" style="margin-top:12px;">
+        <p>"Best" is per-metric independently -- a higher top_k typically improves retrieval_hit_rate/citation_correctness
+        (more chances to retrieve the right chunk) at the cost of latency (more context for the model to process). There is
+        no single "best" top_k across all metrics; this table is meant to make that tradeoff visible, not resolve it.</p>
+      </div>
+    </div>`;
+}
+
+document.getElementById("cfRunBtn").addEventListener("click", runCounterfactual);
 
 /* ---------------- connect your model ---------------- */
 async function loadConnectStatus() {

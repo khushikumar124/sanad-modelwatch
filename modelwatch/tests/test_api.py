@@ -105,3 +105,65 @@ def test_drift_lab_accepting_a_valid_request_returns_a_pollable_job_id(client, m
         time.sleep(0.05)
     assert status["status"] == "done", status
     assert status["result"]["scenario"] == "retrieval_narrowing"
+
+
+# -- Counterfactual experiment endpoints ---------------------------------
+# Validation only, same reasoning as the Drift Lab tests above -- a real
+# run needs Ollama.
+
+
+def test_counterfactual_rejects_malformed_top_k(client):
+    res = client.post("/counterfactual/run?top_k=not,numbers")
+    assert res.status_code == 400
+
+
+def test_counterfactual_rejects_too_few_top_k_values(client):
+    res = client.post("/counterfactual/run?top_k=4")
+    assert res.status_code == 400
+
+
+def test_counterfactual_rejects_too_many_top_k_values(client):
+    res = client.post("/counterfactual/run?top_k=1,2,3,4,5,6")
+    assert res.status_code == 400
+
+
+def test_counterfactual_rejects_out_of_range_top_k(client):
+    res = client.post("/counterfactual/run?top_k=4,21")
+    assert res.status_code == 400
+
+
+def test_counterfactual_rejects_n_cases_out_of_range(client):
+    assert client.post("/counterfactual/run?top_k=4,6&n_cases=0").status_code == 400
+    assert client.post("/counterfactual/run?top_k=4,6&n_cases=23").status_code == 400
+
+
+def test_counterfactual_unknown_job_returns_404(client):
+    res = client.get("/counterfactual/jobs/does-not-exist")
+    assert res.status_code == 404
+
+
+def test_counterfactual_accepting_a_valid_request_returns_a_pollable_job_id(client, monkeypatch):
+    import time
+
+    from modelwatch.experiments import counterfactual
+
+    def fake_compare_top_k(cases, llm_client, top_k_values, chroma_path=None):
+        return counterfactual.CounterfactualResult(
+            n_cases=0, variants=[{"top_k": v, "summary": {}} for v in top_k_values]
+        )
+
+    monkeypatch.setattr(counterfactual, "compare_top_k", fake_compare_top_k)
+    monkeypatch.setattr("sanad.rag.llm_client.OllamaClient", lambda: object())
+    monkeypatch.setattr("sanad.evaluation.dataset.load_dataset", lambda path: [])
+
+    res = client.post("/counterfactual/run?top_k=4,6&n_cases=1")
+    assert res.status_code == 202
+    job_id = res.json()["job_id"]
+
+    for _ in range(50):
+        status = client.get(f"/counterfactual/jobs/{job_id}").json()
+        if status["status"] in ("done", "error"):
+            break
+        time.sleep(0.05)
+    assert status["status"] == "done", status
+    assert [v["top_k"] for v in status["result"]["variants"]] == [4, 6]
