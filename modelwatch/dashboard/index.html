@@ -289,6 +289,10 @@
     <div class="group-label">Registry</div>
     <a class="nav-item" data-page="registry">Models &amp; Versions</a>
   </div>
+  <div class="group">
+    <div class="group-label">Learn</div>
+    <a class="nav-item" data-page="learn">ML &amp; Statistics Concepts</a>
+  </div>
 </nav>
 
 <div class="content-col">
@@ -446,6 +450,14 @@
         <tbody id="versionsBody"><tr><td colspan="3" class="empty">Select a model above.</td></tr></tbody>
       </table>
     </div>
+  </section>
+
+  <section class="page" data-page="learn">
+    <div class="page-head">
+      <h1>ML &amp; Statistics Concepts</h1>
+      <div class="sub">Only concepts this codebase actually implements -- each one links its definition to the real code and, where applicable, the selected model's current data.</div>
+    </div>
+    <div id="learnBody"></div>
   </section>
 </main>
 </div>
@@ -1179,6 +1191,7 @@ document.querySelectorAll(".nav-item").forEach(item => {
     if (page === "experiments") loadExperiments();
     if (page === "registry") { loadRegistry(); loadVersions(); }
     if (page === "statistics") loadStatisticsPage();
+    if (page === "learn") renderLearnPage();
   });
 });
 
@@ -1237,6 +1250,137 @@ async function loadStatisticsPage() {
   } catch (e) {
     box.innerHTML = '<div class="empty">' + esc(e.message) + '</div>';
   }
+}
+
+/* ---------------- learn mode ----------------
+   Only concepts this codebase actually implements. Each entry connects
+   CONCEPT -> IMPLEMENTATION -> CURRENT DATA -> INTERPRETATION; "current"
+   pulls from the already-loaded `history`/`model` state for the
+   selected model rather than fetching anything separately, so it's
+   never out of sync with what Overview/Monitoring show. */
+function _currentSignal(name) {
+  const latest = history[0];
+  if (!latest) return null;
+  return (latest.signals || []).find(s => s.name === name) || null;
+}
+
+const CONCEPTS = [
+  {
+    term: "Embeddings & cosine similarity",
+    what: "An embedding maps text to a fixed-length vector such that semantically similar text maps to nearby vectors. Cosine similarity measures the angle between two vectors (1 = identical direction, 0 = unrelated, -1 = opposite).",
+    why: "Lets retrieval compare a question against document chunks numerically instead of by exact keyword match.",
+    how: "Sanad uses sentence-transformers (all-MiniLM-L6-v2, 384 dimensions) -- see sanad/rag/embeddings.py. Retrieval distance shown in RAG X-Ray is 1 - cosine similarity.",
+    current: () => {
+      const sig = _currentSignal("retrieval");
+      return sig ? `Latest retrieval KS statistic: ${f3(sig.value)} (see the AI Debugger for individual chunk similarities).` : null;
+    },
+  },
+  {
+    term: "Retrieval, top-k, and RAG",
+    what: "Retrieval-Augmented Generation answers a question by first retrieving the k most relevant document chunks (top-k), then generating an answer constrained to only what was retrieved.",
+    why: "Grounds the model in real source text instead of relying on what it memorized during training, and makes an answer's source checkable.",
+    how: "sanad/rag/vector_store.py -- hybrid dense (embeddings) + sparse (BM25) retrieval, fused by reciprocal rank fusion, then reranked and passed to the LLM as context.",
+    current: null,
+  },
+  {
+    term: "Grounding, citations, and claim verification",
+    what: "Grounding: is the answer actually supported by the retrieved text? Citation: does the answer point to which excerpt(s) it used? Claim verification: for each individual factual claim in the answer, is there a specific supporting sentence?",
+    why: "A fluent-sounding answer with no real support (hallucination) is the core failure mode of any RAG system -- these are the checks that catch it.",
+    how: "sanad/features/trace.py's claim verification compares each claim against sentence-level evidence (not whole-chunk, which was measured to dilute similarity) via embedding cosine similarity, classifying supported / partial / unsupported.",
+    current: () => {
+      const sig = _currentSignal("citation_validity");
+      return sig ? `Latest citation-validity signal: ${f3(sig.value)} ${sig.is_drifted ? "(flagged)" : "(within tolerance)"}.` : null;
+    },
+  },
+  {
+    term: "Kolmogorov-Smirnov (KS) test & p-value",
+    what: "A p-value is the probability of seeing a difference this large (or larger) between two samples if they actually came from the same distribution. The KS test measures the maximum gap between two samples' cumulative distributions and converts that gap to a p-value.",
+    why: "Distribution-shape-agnostic: catches shifts, spread changes, and multimodal changes that comparing means alone would miss.",
+    how: "modelwatch/drift/detectors.py's ks_test(). A result is flagged drifted when p-value < alpha (default 0.05, see the Statistical Analysis page's Active Thresholds).",
+    current: () => {
+      const sig = _currentSignal("generation_latency");
+      const p = sig && sig.detail && sig.detail.ks ? sig.detail.ks.p_value : (sig && sig.detail ? sig.detail.p_value : null);
+      return (sig && p !== null && p !== undefined) ? `Latest generation-latency KS p-value: ${f3(p)}.` : null;
+    },
+  },
+  {
+    term: "Statistical vs. practical significance",
+    what: "Statistical significance (the p-value) asks \"is this unlikely to be noise?\" Practical significance (the effect size) asks \"is this big enough to matter?\"",
+    why: "A large sample makes even a trivial difference statistically significant; a small sample can hide a real, large effect. Reporting both prevents either question from silently standing in for the other.",
+    how: "Every detector in modelwatch/drift/detectors.py returns both statistic/p_value AND effect_size -- see the Statistical Analysis page for the full reference.",
+    current: null,
+  },
+  {
+    term: "Population Stability Index (PSI)",
+    what: "PSI buckets a baseline distribution into quantile bins, then measures how much a new sample's distribution across those same bins has shifted, weighted by how surprising that shift is.",
+    why: "A single, interpretable number with standard banding (under 0.1 none, 0.1-0.25 moderate, over 0.25 significant) used widely in credit-risk model monitoring -- not a p-value, but an established practical-shift measure.",
+    how: "modelwatch/drift/detectors.py's population_stability_index(), used by ClassifierAdapter for any bounded numeric feature.",
+    current: null,
+  },
+  {
+    term: "Wasserstein distance",
+    what: "Also called earth-mover's distance: the minimum \"work\" needed to reshape one distribution into another, in the signal's own real units (not a unitless statistic).",
+    why: "Catches a broad, gradual shift that KS's single-point maximum-gap statistic can under-report.",
+    how: "modelwatch/drift/detectors.py's wasserstein_distance(), used alongside KS on RAGAdapter's retrieval-score signal.",
+    current: () => {
+      const sig = _currentSignal("retrieval");
+      const w = sig && sig.detail && sig.detail.wasserstein ? sig.detail.wasserstein.effect_size : null;
+      return (w !== null && w !== undefined) ? `Latest retrieval Wasserstein distance: ${f3(w)}.` : null;
+    },
+  },
+  {
+    term: "Maximum Mean Discrepancy (MMD) & embedding drift",
+    what: "A kernel-based two-sample test comparing two distributions of whole vectors directly (not one scalar summary of them). Embedding drift specifically means the distribution of question embeddings has shifted -- a topic or phrasing change.",
+    why: "A scalar summary like mean similarity can stay flat while the underlying distribution's shape changes completely (e.g. a new cluster of off-topic questions) -- MMD is sensitive to that shape change.",
+    how: "modelwatch/drift/detectors.py's embedding_drift(): RBF kernel with median-heuristic bandwidth, p-value estimated by permutation since MMD has no closed form. Requires Sanad's full-trace telemetry to be on; reports insufficient data otherwise.",
+    current: () => {
+      const sig = _currentSignal("embedding");
+      if (!sig) return null;
+      return sig.detail && sig.detail.insufficient_sample
+        ? "Latest embedding signal: insufficient data (no question embeddings in this batch)."
+        : `Latest embedding MMD effect size: ${f3(sig.value)} ${sig.is_drifted ? "(flagged)" : "(within tolerance)"}.`;
+    },
+  },
+  {
+    term: "Two-proportion z-test",
+    what: "Tests whether a rate (e.g. refusal rate) measured in two samples differs by more than sampling variation would explain, accounting for both samples' sizes.",
+    why: "The same 10-point rate change is far less surprising on 10 events than on 1000 -- a fixed-tolerance delta check can't tell the difference; this test can.",
+    how: "modelwatch/drift/detectors.py's two_proportion_ztest(), used for RAGAdapter's refusal and citation_validity signals.",
+    current: () => {
+      const sig = _currentSignal("refusal");
+      return sig ? `Latest refusal-rate signal: ${f3(sig.value)} ${sig.is_drifted ? "(flagged)" : "(within tolerance)"}.` : null;
+    },
+  },
+  {
+    term: "Data drift, concept drift, and embedding drift",
+    what: "Data drift: the distribution of inputs has changed. Concept drift: the relationship between input and correct output has changed. Embedding drift: specifically, the distribution of embedding vectors (of inputs or retrieved content) has changed.",
+    why: "Different failure modes need different evidence -- a model can be fed familiar-looking inputs and still be wrong (concept drift needs labels to catch), or fed genuinely different inputs and still perform fine.",
+    how: "ClassifierAdapter/RAGAdapter's retrieval and embedding signals detect data/embedding drift; quality_score (when labels or a golden set exist) is what can reveal concept drift.",
+    current: null,
+  },
+  {
+    term: "Precision, recall, F1, and detection delay",
+    what: "Precision: of the times a detector fired, how often was there real drift? Recall: of the times there was real drift, how often did the detector fire? F1: their harmonic mean. Detection delay: how long after drift starts does the detector actually fire?",
+    why: "These are how you judge whether adding more signals (RAGAdapter's 5, vs. a single threshold) actually catches more real problems, not just fires more often.",
+    how: "modelwatch/experiments/benchmark.py measures precision/recall/F1/false-positive-rate on synthetic trials with known ground truth -- see the Experiment Registry page and docs/experiments.md for real measured numbers. Detection delay is not yet measured in this codebase (documented as open in docs/research.md).",
+    current: null,
+  },
+];
+
+function renderLearnPage() {
+  document.getElementById("learnBody").innerHTML = CONCEPTS.map(c => {
+    const currentText = c.current ? c.current() : null;
+    return `
+    <div class="panel">
+      <h2>${esc(c.term)}</h2>
+      <div class="explain">
+        <p><b>What is it?</b> ${esc(c.what)}</p>
+        <p><b>Why use it?</b> ${esc(c.why)}</p>
+        <p><b>How is it calculated / implemented?</b> ${esc(c.how)}</p>
+        ${currentText ? `<p><b>Current data (${esc(model ? model.name : "no model selected")}):</b> ${esc(currentText)}</p>` : ""}
+      </div>
+    </div>`;
+  }).join("");
 }
 
 refresh();
