@@ -200,6 +200,28 @@
     color: var(--text-3); font-size: 10.5px; font-family: var(--mono);
   }
 
+  /* ---------- pipeline stage strip (RAG X-Ray drawer) ----------
+     Vertical, not horizontal: the drawer is 420px, too narrow for 9
+     stages side by side to stay legible. Each stage shows the one
+     observable fact that stage produced -- never hidden reasoning,
+     only artifacts a real pipeline actually emits. */
+  .pipeline { margin-bottom: 16px; }
+  .pipe-stage { display: flex; gap: 10px; position: relative; padding-bottom: 14px; }
+  .pipe-stage:last-child { padding-bottom: 0; }
+  .pipe-stage:not(:last-child)::before {
+    content: ""; position: absolute; left: 5px; top: 16px; bottom: -2px;
+    width: 1px; background: var(--line);
+  }
+  .pipe-dot {
+    width: 11px; height: 11px; border-radius: 50%; background: var(--panel-2);
+    border: 2px solid var(--teal); flex-shrink: 0; margin-top: 2px;
+  }
+  .pipe-dot.dim { border-color: var(--text-3); }
+  .pipe-label {
+    font-size: 9px; text-transform: uppercase; letter-spacing: .1em; color: var(--text-3);
+  }
+  .pipe-value { font-family: var(--mono); font-size: 12px; color: var(--text); margin-top: 2px; word-break: break-word; }
+
   /* ---------- app shell: sidebar + multi-page content ----------
      Progressive disclosure: Overview answers "what is happening",
      the other pages answer "why" -- see each page's own heading.
@@ -402,6 +424,7 @@
   <button class="xbtn" onclick="closeDrawer()">esc · close</button>
   <h3 id="drawerTitle">Run detail</h3>
   <div class="sub" id="drawerSub"></div>
+  <div id="drawerPipeline"></div>
   <div class="kv" id="drawerStats"></div>
   <div id="drawerDiagnosis"></div>
   <div id="drawerSignals"></div>
@@ -810,6 +833,7 @@ function selectRun(id) {
   document.getElementById("drawerTitle").textContent =
     (run.is_drifted ? "Drift detected" : "Clean run") + " · v" + run.version;
   document.getElementById("drawerSub").textContent = day(run.timestamp) + " · run #" + run.id;
+  document.getElementById("drawerPipeline").innerHTML = "";
 
   const st = run.statistics || {};
   const pairs = Object.entries(st);
@@ -906,6 +930,36 @@ function renderTraceList(traces) {
     tr.onclick = () => openTrace(tr.dataset.trace));
 }
 
+/* Observable pipeline stages for one RAG request -- every value here is
+   something the real pipeline actually produced (sanad/features/trace.py),
+   never inferred or hidden model reasoning. A stage is skipped rather
+   than shown empty when its data isn't in the trace. */
+function renderPipelineStrip(d) {
+  const claimsSupported = (d.claims || []).filter(c => c.status === "supported").length;
+  const stages = [
+    { label: "Query", value: d.question },
+    { label: "Embedding", value: d.embedding_model ? `${d.embedding_model} · ${d.embedding_dims}d` : null },
+    { label: "Retrieval", value: d.retrieval ? `top-${d.top_k ?? d.retrieval.length} · ${d.retrieval.length} chunk(s) retrieved` : null },
+    { label: "Ranking & Context", value: d.retrieval && d.retrieval.length
+      ? `best similarity ${f3(Math.max(...d.retrieval.map(r => r.similarity || 0)))}` : null },
+    { label: "Prompt", value: d.prompt_version ? `version ${d.prompt_version}` : null },
+    { label: "LLM", value: d.model_name },
+    { label: "Claims", value: d.claims && d.claims.length ? `${d.claims.length} claim(s) extracted` : null },
+    { label: "Evidence verification", value: d.claims && d.claims.length
+      ? `${claimsSupported}/${d.claims.length} supported` : null },
+    { label: "Answer", value: d.grounded !== undefined ? (d.grounded ? "grounded" : "refused") : null },
+  ].filter(s => s.value !== null && s.value !== undefined && s.value !== "");
+
+  return '<div class="pipeline">' + stages.map(s => `
+    <div class="pipe-stage">
+      <div class="pipe-dot"></div>
+      <div>
+        <div class="pipe-label">${esc(s.label)}</div>
+        <div class="pipe-value">${esc(String(s.value))}</div>
+      </div>
+    </div>`).join("") + '</div>';
+}
+
 async function openTrace(traceId) {
   let trace, diagnosis;
   try {
@@ -919,9 +973,9 @@ async function openTrace(traceId) {
   document.getElementById("drawerTitle").textContent = (d.grounded ? "Grounded answer" : "Refused") + " · RAG X-Ray";
   document.getElementById("drawerSub").textContent = day(trace.created_at) + " · " + traceId.slice(0, 12);
 
+  document.getElementById("drawerPipeline").innerHTML = renderPipelineStrip(d);
+
   const statPairs = {
-    question: d.question, answer: d.answer, model: d.model_name,
-    embeddings: d.embedding_model, "top-k": d.top_k, prompt: d.prompt_version,
     "retrieval ms": d.retrieval_latency_ms, "generation ms": d.generation_latency_ms,
     "grounding score": d.grounding_score, "citation score": d.citation_score,
   };
@@ -994,6 +1048,7 @@ async function openExperiment(id) {
   try { exp = await get(`/experiments/${id}`); } catch (e) { console.error(e); return; }
   document.getElementById("drawerTitle").textContent = exp.name;
   document.getElementById("drawerSub").textContent = day(exp.created_at) + " · " + exp.kind + " · " + exp.status;
+  document.getElementById("drawerPipeline").innerHTML = "";
   document.getElementById("drawerStats").innerHTML =
     `<div class="k">kind</div><div>${esc(exp.kind)}</div><div class="k">status</div><div>${esc(exp.status)}</div>`;
   document.getElementById("drawerDiagnosis").innerHTML = "";
