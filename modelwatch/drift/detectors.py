@@ -31,6 +31,7 @@ from dataclasses import dataclass, field
 from typing import Any, Sequence
 
 from scipy import stats
+from scipy.spatial.distance import jensenshannon
 
 #: Below this many observations in either sample, a test is not run --
 #: distributional tests on a handful of points produce p-values that look
@@ -204,6 +205,93 @@ def population_stability_index(
         n_baseline=len(baseline),
         n_current=len(current),
         detail={"bins": len(edges) - 1, "band": _psi_band(psi)},
+    )
+
+
+def chi_square_test(
+    baseline_counts: dict[str, int], current_counts: dict[str, int], alpha: float = 0.05
+) -> DetectorResult:
+    """Pearson's chi-square test of independence: has the distribution
+    across CATEGORIES (not continuous values -- use ks_test/
+    wasserstein_distance/population_stability_index for those) changed
+    between baseline and current? Tests baseline and current as two rows
+    of a contingency table over the union of categories seen in either.
+
+    effect_size is Cramer's V (statistic normalized by sample size and
+    degrees of freedom, in [0, 1]) rather than the raw chi-square
+    statistic, which scales with sample size and so isn't comparable
+    across differently-sized batches the way the other detectors'
+    effect sizes are.
+    """
+    categories = sorted(set(baseline_counts) | set(current_counts))
+    n_baseline = sum(baseline_counts.values())
+    n_current = sum(current_counts.values())
+    if n_baseline < MIN_SAMPLE_SIZE or n_current < MIN_SAMPLE_SIZE or len(categories) < 2:
+        return _insufficient("chi_square", n_baseline, n_current)
+
+    baseline_row = [baseline_counts.get(c, 0) for c in categories]
+    current_row = [current_counts.get(c, 0) for c in categories]
+    table = [baseline_row, current_row]
+
+    statistic, p_value, dof, _expected = stats.chi2_contingency(table)
+    n_total = n_baseline + n_current
+    min_dim = min(len(table) - 1, len(categories) - 1)
+    cramers_v = float((statistic / (n_total * max(min_dim, 1))) ** 0.5) if min_dim > 0 else 0.0
+
+    return DetectorResult(
+        detector="chi_square",
+        statistic=float(statistic),
+        p_value=float(p_value),
+        effect_size=cramers_v,
+        drift_detected=bool(p_value < alpha),
+        confidence=max(0.0, min(1.0, 1.0 - p_value)),
+        n_baseline=n_baseline,
+        n_current=n_current,
+        detail={"alpha": alpha, "categories": categories, "degrees_of_freedom": int(dof)},
+    )
+
+
+def jensen_shannon_divergence(
+    baseline_counts: dict[str, int], current_counts: dict[str, int], threshold: float = 0.1
+) -> DetectorResult:
+    """Jensen-Shannon divergence between two categorical distributions --
+    a symmetric, bounded (0 to ln(2) in nats, or 0 to 1 using scipy's
+    base-2 convention) alternative to chi-square. Like PSI, this is a
+    direct divergence measure, not a hypothesis test: no p-value, and
+    `drift_detected` fires on crossing `threshold` directly rather than
+    a significance level. Reaches for this over chi-square when the
+    question is "how different are these two distributions" rather than
+    "is this difference likely due to chance" -- chi-square's p-value
+    conflates sample size with distributional difference; JS divergence
+    doesn't scale with sample size at all.
+    """
+    categories = sorted(set(baseline_counts) | set(current_counts))
+    n_baseline = sum(baseline_counts.values())
+    n_current = sum(current_counts.values())
+    if n_baseline < MIN_SAMPLE_SIZE or n_current < MIN_SAMPLE_SIZE or len(categories) < 2:
+        return _insufficient("jensen_shannon", n_baseline, n_current)
+
+    baseline_probs = [baseline_counts.get(c, 0) / n_baseline for c in categories]
+    current_probs = [current_counts.get(c, 0) / n_current for c in categories]
+
+    # scipy's jensenshannon returns a *distance* (sqrt of the divergence),
+    # base 2 by default -- squaring it back gives the divergence itself,
+    # bounded in [0, 1] in that base, which is what's reported here as
+    # both statistic and effect_size (no separate scale between them,
+    # same as population_stability_index).
+    js_distance = float(jensenshannon(baseline_probs, current_probs, base=2))
+    js_divergence = js_distance ** 2
+
+    return DetectorResult(
+        detector="jensen_shannon",
+        statistic=js_divergence,
+        p_value=None,
+        effect_size=js_divergence,
+        drift_detected=js_divergence >= threshold,
+        confidence=max(0.0, min(1.0, js_divergence / threshold)) if threshold > 0 else 0.0,
+        n_baseline=n_baseline,
+        n_current=n_current,
+        detail={"threshold": threshold, "categories": categories},
     )
 
 

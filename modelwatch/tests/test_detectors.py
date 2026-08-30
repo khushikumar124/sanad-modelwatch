@@ -5,7 +5,9 @@ import json
 import random
 
 from modelwatch.drift.detectors import (
+    chi_square_test,
     embedding_drift,
+    jensen_shannon_divergence,
     ks_test,
     population_stability_index,
     two_proportion_ztest,
@@ -169,3 +171,82 @@ def test_embedding_drift_is_deterministic_given_a_random_state():
     second = embedding_drift(baseline, current, n_permutations=50, random_state=7)
     assert first.p_value == second.p_value
     assert first.statistic == second.statistic
+
+
+# -- categorical detectors: chi-square and Jensen-Shannon -----------------
+
+
+def test_chi_square_does_not_flag_a_similar_categorical_split():
+    baseline = {"clause_a": 50, "clause_b": 50}
+    current = {"clause_a": 48, "clause_b": 52}
+    result = chi_square_test(baseline, current)
+    assert result.drift_detected is False
+    assert result.insufficient_sample is False
+
+
+def test_chi_square_flags_a_clear_categorical_shift():
+    baseline = {"clause_a": 90, "clause_b": 10}
+    current = {"clause_a": 10, "clause_b": 90}
+    result = chi_square_test(baseline, current)
+    assert result.drift_detected is True
+    assert result.p_value < 0.001
+
+
+def test_chi_square_effect_size_is_cramers_v_in_range():
+    baseline = {"a": 90, "b": 10}
+    current = {"a": 10, "b": 90}
+    result = chi_square_test(baseline, current)
+    assert 0.0 <= result.effect_size <= 1.0
+
+
+def test_chi_square_handles_a_category_only_seen_in_one_sample():
+    baseline = {"a": 40, "b": 40}
+    current = {"a": 40, "b": 30, "c": 10}
+    result = chi_square_test(baseline, current)
+    assert result.insufficient_sample is False
+    assert "c" in result.detail["categories"]
+
+
+def test_chi_square_reports_insufficient_sample_below_minimum():
+    result = chi_square_test({"a": 2, "b": 1}, {"a": 1, "b": 2})
+    assert result.insufficient_sample is True
+    assert result.drift_detected is False
+
+
+def test_chi_square_reports_insufficient_sample_with_only_one_category():
+    result = chi_square_test({"a": 20}, {"a": 25})
+    assert result.insufficient_sample is True
+
+
+def test_jensen_shannon_does_not_flag_a_similar_categorical_split():
+    baseline = {"clause_a": 50, "clause_b": 50}
+    current = {"clause_a": 48, "clause_b": 52}
+    result = jensen_shannon_divergence(baseline, current)
+    assert result.drift_detected is False
+
+
+def test_jensen_shannon_flags_a_clear_categorical_shift():
+    baseline = {"clause_a": 90, "clause_b": 10}
+    current = {"clause_a": 10, "clause_b": 90}
+    result = jensen_shannon_divergence(baseline, current)
+    assert result.drift_detected is True
+
+
+def test_jensen_shannon_divergence_is_bounded_zero_to_one():
+    # maximally different distributions (disjoint support)
+    baseline = {"a": 100, "b": 0}
+    current = {"a": 0, "b": 100}
+    result = jensen_shannon_divergence(baseline, current)
+    assert 0.0 <= result.effect_size <= 1.0
+
+
+def test_jensen_shannon_reports_insufficient_sample_below_minimum():
+    result = jensen_shannon_divergence({"a": 2, "b": 1}, {"a": 1, "b": 2})
+    assert result.insufficient_sample is True
+
+
+def test_categorical_detector_results_are_json_serializable():
+    baseline = {"a": 90, "b": 10}
+    current = {"a": 10, "b": 90}
+    for result in [chi_square_test(baseline, current), jensen_shannon_divergence(baseline, current)]:
+        json.dumps(result.to_dict())

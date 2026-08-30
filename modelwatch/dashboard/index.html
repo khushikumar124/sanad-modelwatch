@@ -1336,6 +1336,18 @@ const DETECTOR_REFERENCE = [
     assumptions: "p-value estimated by permutation (reshuffling baseline/current labels), not closed-form; independence between permutations.",
     why: "Compares whole embedding-vector distributions directly, catching a topic/phrasing shift that collapsing to one scalar (e.g. mean similarity) can hide entirely.",
   },
+  {
+    name: "Chi-square test of independence", used_by: "not wired into an adapter yet -- implemented and tested, available for a future categorical-feature adapter",
+    formula: "χ² statistic over a baseline-vs-current contingency table; effect size reported as Cramer's V (normalized, sample-size-independent)",
+    assumptions: "Categories are discrete and mutually exclusive; expected cell counts should not be too small (standard chi-square caveat).",
+    why: "The right tool for categorical (not continuous-numeric) drift -- KS/Wasserstein/PSI all assume an ordered numeric scale a category label doesn't have.",
+  },
+  {
+    name: "Jensen-Shannon divergence", used_by: "not wired into an adapter yet -- implemented and tested, available for a future categorical-feature adapter",
+    formula: "JSD(P‖Q) = ½·KL(P‖M) + ½·KL(Q‖M), M = ½(P+Q) -- symmetric and bounded, unlike raw KL divergence",
+    assumptions: "None beyond having two categorical probability distributions; no p-value -- a direct divergence measure like PSI, not a hypothesis test.",
+    why: "Doesn't scale with sample size the way a chi-square p-value does, so it directly answers \"how different are these\" rather than \"is this likely chance\".",
+  },
 ];
 
 function renderStatsReference() {
