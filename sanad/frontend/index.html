@@ -492,6 +492,29 @@
     .sidebar { display: none; }
     .pane, .dochead, .tabs { padding-left: 16px; padding-right: 16px; }
   }
+
+  /* ---------- learn panel ---------- */
+  #learnPanel {
+    position: fixed; inset: 0; background: rgba(0,0,0,.25); z-index: 80;
+    display: none; align-items: flex-start; justify-content: center; padding: 48px 16px;
+    overflow-y: auto;
+  }
+  #learnPanel.show { display: flex; }
+  #learnPanel.show .learn-card { animation: popIn .22s ease; }
+  .learn-card {
+    background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg);
+    width: 620px; max-width: 100%; box-shadow: var(--shadow-lg); padding: 30px 32px 24px;
+  }
+  .learn-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; }
+  .learn-head h2 { font-family: var(--serif); font-size: 22px; margin: 0; color: var(--accent); }
+  .learn-close { background: none; border: none; font-size: 20px; color: var(--muted); cursor: pointer; line-height: 1; padding: 4px; }
+  .learn-close:hover { color: var(--ink); }
+  .learn-intro { color: var(--muted); font-size: 13px; margin: 2px 0 20px; }
+  .learn-item { border-top: 1px solid var(--line-soft); padding: 16px 0; }
+  .learn-item:first-of-type { border-top: none; padding-top: 4px; }
+  .learn-item h3 { font-size: 14.5px; margin: 0 0 6px; font-family: var(--serif); }
+  .learn-item p { font-size: 13px; color: var(--ink-soft); line-height: 1.55; margin: 0 0 8px; }
+  .learn-item p:last-child { margin-bottom: 0; }
 </style>
 </head>
 <body>
@@ -519,10 +542,61 @@
     <div class="spacer"></div>
     <span class="chip-quiet"><span class="dot"></span>runs on this machine</span>
     <span class="chip-quiet" id="modelChip" style="display:none"></span>
+    <button class="linkish" id="learnBtn" style="margin-left:4px;">Learn</button>
     <span id="userBar" style="display:none;align-items:center;gap:4px;">
       <span class="chip-quiet" id="userName"></span>
       <button class="linkish" id="logoutBtn">Sign out</button>
     </span>
+  </div>
+
+  <div id="learnPanel">
+    <div class="learn-card">
+      <div class="learn-head">
+        <h2>How to read Sanad</h2>
+        <button class="learn-close" id="learnCloseBtn" title="Close" aria-label="Close">&times;</button>
+      </div>
+      <p class="learn-intro">What each status and label actually means -- and, just as important, what it doesn't claim.</p>
+
+      <div class="learn-item">
+        <h3>"Grounded" / "verified" vs. "unverified"</h3>
+        <p>Every obligation, party, and Overview field the model extracts is checked against the document's own text before being shown as fact. "Verified" means the quote the model gave actually appears in the contract (word-for-word, or close enough to survive minor OCR noise). "Unverified" means the model made a claim it couldn't back up with a real quote -- shown anyway, but flagged, rather than silently dropped or trusted blindly.</p>
+      </div>
+
+      <div class="learn-item">
+        <h3>Overview statuses: Found / Not found / Unclear / Insufficient evidence</h3>
+        <p><strong>Found</strong> -- the contract states this clearly, and the quote checks out. <strong>Not found</strong> -- the contract doesn't address this topic at all. <strong>Unclear</strong> -- the contract touches the topic but the wording is ambiguous. <strong>Insufficient evidence</strong> -- the model claimed something, but its quote didn't hold up against the real text, so the claim is shown as unconfirmed rather than fact.</p>
+      </div>
+
+      <div class="learn-item">
+        <h3>Risk scan: pattern matches, not legal judgment</h3>
+        <p>The risk scan looks for known unfavourable phrasings (e.g. "terminate ... without notice") using fixed rules, not an LLM's opinion -- so a finding is deterministic and reproducible, and always points at the exact clause that triggered it. It cannot catch a harmful term phrased in wording no rule anticipates, and a fired rule is not legal advice: an unusual clause may be perfectly reasonable in context.</p>
+      </div>
+
+      <div class="learn-item">
+        <h3>Decomposable risk factors</h3>
+        <p>Some findings (currently non-compete clauses) break down further into specific, checkable facts -- does the clause state a duration? A geographic scope? Compensation for the restriction? Each is a real regex match against that clause's own text, shown present or absent with its quote -- never a computed score.</p>
+      </div>
+
+      <div class="learn-item">
+        <h3>Claim verification: Supported / Partially supported / Unsupported</h3>
+        <p>When Sanad answers a question, each sentence of the answer is scored against the retrieved evidence using the same embedding similarity the retrieval itself uses. This is a heuristic triage aid for a human reader, not a certified fact-check -- treat the labels as "worth double-checking" signals, not guarantees.</p>
+      </div>
+
+      <div class="learn-item">
+        <h3>"Potential conflict requiring review"</h3>
+        <p>When two clauses in the same category (e.g. notice periods) state different durations, Sanad flags it -- but it can only tell that the numbers differ, not whether that's a real drafting mistake or two clauses that legitimately cover different situations. The wording says "potential" and "requiring review" deliberately, not "contradiction," because the heuristic can't confirm which one it is.</p>
+      </div>
+
+      <div class="learn-item">
+        <h3>Document quality: OCR and low-text pages</h3>
+        <p>Pages with no native text layer are read via OCR (optical character recognition), which is less reliable than a text-based PDF. A page flagged for unusually little extracted text might be a failed OCR pass -- or it might just be a short page (a signature block, a cover sheet). It's a prompt to look, not a verdict.</p>
+      </div>
+
+      <div class="learn-item">
+        <h3>What Sanad won't do</h3>
+        <p>It won't state a fact it can't point to in your document, it won't fabricate a confidence score or similarity number, and it won't give legal advice. When it doesn't know, it says "not found," "unclear," or "insufficient evidence" instead of guessing.</p>
+      </div>
+    </div>
   </div>
 
   <div class="body">
@@ -1478,6 +1552,12 @@ document.addEventListener("DOMContentLoaded", async () => {
     await fetch("/api/auth/logout", { method: "POST" });
     location.reload();
   };
+
+  const learnPanel = document.getElementById("learnPanel");
+  document.getElementById("learnBtn").onclick = () => learnPanel.classList.add("show");
+  document.getElementById("learnCloseBtn").onclick = () => learnPanel.classList.remove("show");
+  learnPanel.addEventListener("click", e => { if (e.target === learnPanel) learnPanel.classList.remove("show"); });
+  document.addEventListener("keydown", e => { if (e.key === "Escape") learnPanel.classList.remove("show"); });
 
   if (!(await checkSession())) return;
 
