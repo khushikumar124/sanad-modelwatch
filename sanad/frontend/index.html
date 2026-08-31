@@ -562,6 +562,7 @@
         </div>
         <div class="tabs">
           <button class="tab active" data-pane="risks">Risk scan <span class="count" id="tabRiskCount"></span></button>
+          <button class="tab" data-pane="overview">Overview</button>
           <button class="tab" data-pane="summary">Summary</button>
           <button class="tab" data-pane="ask">Ask</button>
           <button class="tab" data-pane="scenario">Scenario</button>
@@ -573,6 +574,7 @@
         </div>
 
         <div class="pane" id="pane-risks"><div class="wrap" id="risksBody"></div></div>
+        <div class="pane" id="pane-overview" hidden><div class="wrap" id="overviewBody"></div></div>
         <div class="pane" id="pane-summary" hidden><div class="wrap" id="summaryBody"></div></div>
         <div class="pane" id="pane-ask" hidden>
           <div class="wrap">
@@ -627,6 +629,7 @@ let currentId = null;
 const riskCache = {};   // doc_id -> risk report
 const sumCache = {};    // doc_id -> summary
 const chatCache = {};   // doc_id -> [html]
+const overviewCache = {}; // doc_id -> ContractOverview
 
 /* ---------------- helpers ---------------- */
 function esc(s) { const d = document.createElement("div"); d.textContent = s ?? ""; return d.innerHTML; }
@@ -800,7 +803,7 @@ async function upload(file) {
 /* ---------------- tabs ---------------- */
 function showTab(name, jumpToClause) {
   document.querySelectorAll(".tab").forEach(t => t.classList.toggle("active", t.dataset.pane === name));
-  ["risks", "summary", "ask", "scenario", "compare", "review", "document"].forEach(p => {
+  ["risks", "overview", "summary", "ask", "scenario", "compare", "review", "document"].forEach(p => {
     document.getElementById("pane-" + p).hidden = p !== name;
   });
   // Retrigger the entrance animation on the pane we just revealed --
@@ -811,6 +814,7 @@ function showTab(name, jumpToClause) {
   void shown.offsetWidth;
   shown.classList.add("pane-fade");
   if (name === "ask") setTimeout(() => document.getElementById("chatInput").focus(), 30);
+  if (name === "overview") loadOverview(currentId);
   if (name === "compare") renderCompareSelect();
   if (name === "review") loadReview(currentId);
   if (name === "document") loadDocument(currentId, jumpToClause);
@@ -1108,6 +1112,70 @@ function renderReview(data) {
     <h3 style="font-family:var(--serif);font-size:18px;margin:20px 0 8px;">Clause coverage</h3>
     <div>${coverageRows}</div>
     <div class="disclaimer">"Not found" means this scan's patterns didn't match anything -- it is not proof the contract lacks that protection, only that it's worth checking yourself.</div>
+  `;
+}
+
+/* ---------------- overview ---------------- */
+async function loadOverview(id) {
+  const body = document.getElementById("overviewBody");
+  if (overviewCache[id]) return renderOverview(overviewCache[id]);
+  const setProgress = secs => {
+    body.innerHTML = '<div class="skel"><div style="width:40%"></div><div style="width:90%"></div><div style="width:70%"></div></div>' +
+      '<div class="fineprint" style="margin-top:10px;">Reading the contract for its key terms — ' +
+      (secs ? Math.round(secs) + 's so far. ' : '') +
+      'This runs in the background, so feel free to switch tabs and come back.</div>';
+  };
+  setProgress(0);
+  try {
+    const overview = await runJob("/documents/" + id + "/overview/job", setProgress);
+    overviewCache[id] = overview;
+    if (currentId === id) renderOverview(overview);
+  } catch (e) { body.innerHTML = '<p class="none">' + esc(e.message) + '</p>'; }
+}
+
+function renderOverview(overview) {
+  const body = document.getElementById("overviewBody");
+  if (overview.parse_error) {
+    body.innerHTML = '<p class="none">The model\'s output couldn\'t be parsed. Try again, or check the Ask tab directly.</p>';
+    return;
+  }
+
+  const statusPill = status => {
+    const label = { found: "found", not_found: "not found", unclear: "unclear", insufficient_evidence: "insufficient evidence" }[status] || status;
+    const cls = status === "found" ? "good" : (status === "not_found" ? "" : "warn");
+    return '<span class="pill ' + cls + '">' + label + '</span>';
+  };
+
+  const sourceLink = idx => idx === null || idx === undefined ? "" :
+    '<button class="linkish" style="padding:2px 0;margin-top:4px;color:var(--accent);" onclick="goToClause(' + idx + ')">View in document →</button>';
+
+  const fieldRows = overview.fields.map(f => `
+    <div class="scanline" style="align-items:flex-start;margin-bottom:10px;">
+      <div style="flex:1;">
+        <div style="display:flex;gap:8px;align-items:center;margin-bottom:2px;">
+          <strong style="font-size:13px;">${esc(f.label)}</strong>${statusPill(f.status)}
+        </div>
+        ${f.value ? '<div style="font-size:13.5px;color:var(--ink-2);">' + esc(f.value) + '</div>' : ""}
+        ${sourceLink(f.evidence_chunk_index)}
+      </div>
+    </div>`).join("");
+
+  const itemList = items => items.length
+    ? '<ul style="margin:0;padding-left:19px;">' + items.map(it => '<li style="margin-bottom:8px;">' +
+        esc(it.text) + (it.grounded ? ' <span class="pill good">verified</span>' : ' <span class="pill warn" title="Could not find this exact wording in the document">unverified</span>') +
+        sourceLink(it.evidence_chunk_index) + '</li>').join("") + '</ul>'
+    : '<p class="none">None extracted.</p>';
+
+  body.innerHTML = `
+    <h3 style="font-family:var(--serif);font-size:18px;margin:0 0 8px;">Parties</h3>
+    <div style="margin-bottom:20px;">${itemList(overview.parties)}</div>
+
+    <h3 style="font-family:var(--serif);font-size:18px;margin:0 0 8px;">Key terms</h3>
+    <div style="margin-bottom:20px;">${fieldRows}</div>
+
+    <h3 style="font-family:var(--serif);font-size:18px;margin:0 0 8px;">Major obligations</h3>
+    <div style="margin-bottom:8px;">${itemList(overview.major_obligations)}</div>
+    <div class="disclaimer">Every "found" or "unclear" item above is checked against the document's own wording -- a claim that doesn't check out is shown as "insufficient evidence" rather than stated as fact. "Not found" means the contract doesn't address that topic, not that something is missing or wrong.</div>
   `;
 }
 
