@@ -39,6 +39,7 @@ from sanad.api.schemas import (
     DocumentResponse,
     LoginRequest,
     ObligationsResponse,
+    OverviewResponse,
     ReviewResponse,
     RiskResponse,
     ScenarioRequest,
@@ -56,6 +57,7 @@ from sanad.features.scenario import simulate_scenario
 from sanad.features.contradictions import find_contradictions
 from sanad.features.coverage import check_coverage
 from sanad.features.obligations import extract_obligations
+from sanad.features.overview import build_overview
 from sanad.features.review import build_review
 from sanad.features.risk_flagger import flag_risks
 from sanad.features.trace import build_trace
@@ -314,6 +316,11 @@ def _compute_obligations(doc_id: str, user: str | None) -> dict:
     return extract_obligations(record.text, llm_client).to_dict()
 
 
+def _compute_overview(doc_id: str, user: str | None) -> dict:
+    record = _get_record(doc_id, user)
+    return build_overview(record.text, llm_client).to_dict()
+
+
 def _compute_review(doc_id: str, user: str | None) -> dict:
     record = _get_record(doc_id, user)
     chunks = chunk_document(record.text)
@@ -358,6 +365,31 @@ def get_review(doc_id: str, _user: str | None = Depends(require_user)):
         return _compute_review(doc_id, _user)
     except LLMConnectionError as e:
         raise HTTPException(status_code=503, detail=str(e))
+
+
+@app.get("/api/documents/{doc_id}/overview", response_model=OverviewResponse)
+def get_overview(doc_id: str, _user: str | None = Depends(require_user)):
+    """Structured Contract Overview: parties, dates, payment, notice,
+    termination, governing law, and more -- see overview.py for the
+    full field list. Every field carries a real status (found/not_found/
+    unclear/insufficient_evidence) and, when found, a grounding check
+    against the document's own text.
+
+    Synchronous form, kept for scripts/tests/curl -- prefer
+    POST .../overview/job for anything driving a UI."""
+    try:
+        return _compute_overview(doc_id, _user)
+    except LLMConnectionError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+
+
+@app.post("/api/documents/{doc_id}/overview/job", status_code=202)
+def start_overview_job(doc_id: str, _user: str | None = Depends(require_user)):
+    """Starts Contract Overview extraction in the background -- see
+    start_obligations_job() and sanad/jobs.py for why."""
+    _get_record(doc_id, _user)
+    job_id = jobs.submit("overview", lambda: _compute_overview(doc_id, _user))
+    return {"job_id": job_id}
 
 
 @app.post("/api/documents/{doc_id}/obligations/job", status_code=202)

@@ -113,6 +113,13 @@ class ObligationsResponse(BaseModel):
     total_count: int
 
 
+class OverviewResponse(BaseModel):
+    fields: list[dict[str, Any]]
+    parties: list[dict[str, Any]]
+    major_obligations: list[dict[str, Any]]
+    parse_error: bool
+
+
 class CoverageResponse(BaseModel):
     results: list[dict[str, Any]]
     not_found_count: int

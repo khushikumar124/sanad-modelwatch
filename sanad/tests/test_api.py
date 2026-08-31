@@ -365,6 +365,42 @@ def test_obligations_job_unknown_document_returns_404_immediately():
     assert res.status_code == 404
 
 
+def test_overview_returns_503_when_llm_unreachable(uploaded_doc_id, llm_unreachable):
+    res = client.get(f"/api/documents/{uploaded_doc_id}/overview")
+    assert res.status_code == 503
+    assert "ollama" in res.json()["detail"].lower()
+
+
+def test_overview_unknown_document_returns_404():
+    res = client.get("/api/documents/does-not-exist/overview")
+    assert res.status_code == 404
+
+
+def test_overview_job_starts_and_completes(uploaded_doc_id, fake_llm_response):
+    start = client.post(f"/api/documents/{uploaded_doc_id}/overview/job")
+    assert start.status_code == 202
+    job_id = start.json()["job_id"]
+
+    job = _wait_for_job(job_id)
+    assert job["status"] == "done"
+    assert "fields" in job["result"]
+    assert "parties" in job["result"]
+    assert "major_obligations" in job["result"]
+
+
+def test_overview_job_reports_error_status_when_llm_unreachable(uploaded_doc_id, llm_unreachable):
+    start = client.post(f"/api/documents/{uploaded_doc_id}/overview/job")
+    assert start.status_code == 202
+    job = _wait_for_job(start.json()["job_id"])
+    assert job["status"] == "error"
+    assert "ollama" in job["error"].lower()
+
+
+def test_overview_job_unknown_document_returns_404_immediately():
+    res = client.post("/api/documents/does-not-exist/overview/job")
+    assert res.status_code == 404
+
+
 def test_job_status_unknown_job_id_returns_404():
     res = client.get("/api/jobs/does-not-exist")
     assert res.status_code == 404
