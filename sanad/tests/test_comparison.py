@@ -42,6 +42,30 @@ def test_rule_only_in_a_is_reported_correctly():
     assert result.shared == []
 
 
+def test_only_in_a_impact_names_which_document_and_who_is_affected():
+    """The 'semantic impact' explanation, not just a bare textual diff --
+    says which document, and who it affects, using the same affects
+    metadata the single-document risk scan already shows."""
+    report_a = RiskReport(findings=[_finding("deposit_forfeiture")], clauses_scanned=10)
+    report_b = RiskReport(findings=[], clauses_scanned=8)
+    result = compare_risk_reports(report_a, report_b)
+    impact = result.only_in_a[0].impact
+    assert "Document A" in impact and "Document B" in impact
+    assert "someone" in impact
+    assert result.only_in_a[0].affects == "someone"
+
+
+def test_shared_rule_impact_notes_wording_may_still_differ():
+    """A shared rule is not proof the two clauses are identical -- the
+    impact text must say so rather than implying equivalence."""
+    report_a = RiskReport(findings=[_finding("non_compete")], clauses_scanned=10)
+    report_b = RiskReport(findings=[_finding("non_compete")], clauses_scanned=8)
+    result = compare_risk_reports(report_a, report_b)
+    impact = result.shared[0].impact
+    assert "both documents" in impact
+    assert "differ" in impact
+
+
 def test_rule_only_in_b_is_reported_correctly():
     report_a = RiskReport(findings=[], clauses_scanned=10)
     report_b = RiskReport(findings=[_finding("lock_in_period")], clauses_scanned=8)

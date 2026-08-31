@@ -1010,7 +1010,9 @@ function renderComparison(c) {
     return '<div class="risk ' + r.severity + '">' +
       '<div class="risk-top"><span class="risk-title">' + esc(r.label) + '</span>' +
       '<span class="sev-tag ' + r.severity + '">' + r.severity + '</span></div>' +
-      '<div class="risk-who">' + dot + '</div></div>';
+      '<div class="risk-who">' + dot + '</div>' +
+      (r.impact ? '<div class="risk-why" style="margin-top:6px;">' + esc(r.impact) + '</div>' : '') +
+      '</div>';
   };
   const section = (title, rows, side) => rows.length
     ? '<h4 style="margin:16px 0 8px;font-size:13px;color:var(--ink-2);">' + title + ' (' + rows.length + ')</h4>' +
