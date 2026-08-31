@@ -861,15 +861,29 @@ function renderRisks(r) {
     ? '<div class="disclaimer">No known unfavourable pattern matched. That is not a clean bill of ' +
       'health — it means nothing in the rule set fired, and a contract can still contain terms ' +
       'no rule anticipates.</div>'
-    : r.findings.map(f =>
-        '<div class="risk ' + f.severity + '">' +
+    : r.findings.map(f => {
+        // Decomposable factors (see sanad/features/risk_flagger.py RiskFactor)
+        // -- a real, checkable present/absent fact about this specific
+        // clause, not a rolled-up score. Only rendered when the rule
+        // defines any (currently non_compete).
+        const factors = (f.factors && f.factors.length)
+          ? '<div class="risk-factors" style="margin-top:8px;display:flex;flex-direction:column;gap:4px;">' +
+              f.factors.map(fac => '<div style="font-size:12.5px;display:flex;gap:6px;align-items:baseline;">' +
+                '<span class="pill ' + (fac.present ? "good" : "") + '" style="flex-shrink:0;">' + (fac.present ? "yes" : "not stated") + '</span>' +
+                '<span><strong>' + esc(fac.label) + '</strong>' + (fac.quote ? ' — “' + esc(fac.quote) + '”' : '') + '</span>' +
+              '</div>').join("") +
+            '</div>'
+          : "";
+        return '<div class="risk ' + f.severity + '">' +
           '<div class="risk-top"><span class="risk-title">' + esc(f.label) + '</span>' +
           '<span class="sev-tag ' + f.severity + '">' + f.severity + '</span></div>' +
           '<div class="risk-why">' + esc(f.explanation) + '</div>' +
           '<div class="risk-who">Tends to disadvantage: ' + esc(f.affects) + '</div>' +
           '<div class="risk-quote">' + esc(f.excerpt) + '</div>' +
+          factors +
           '<button class="linkish" style="padding:2px 0;margin-top:6px;color:var(--accent);" onclick="goToClause(' + f.chunk_index + ')">View in document →</button>' +
-        '</div>').join("") +
+        '</div>';
+      }).join("") +
       '<div class="disclaimer">These are pattern matches on the contract\'s own wording, not legal ' +
       'advice. A flagged clause may be perfectly reasonable in context — read the quoted text and ' +
       'judge it yourself.</div>';
