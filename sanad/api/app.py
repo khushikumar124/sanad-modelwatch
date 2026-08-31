@@ -11,6 +11,7 @@ nothing is re-extracted or re-embedded when a document is looked up.
 """
 from __future__ import annotations
 
+import json
 import logging
 import time
 import uuid
@@ -38,6 +39,7 @@ from sanad.api.schemas import (
     CrossChatResponse,
     DocumentResponse,
     LoginRequest,
+    DocumentQualityResponse,
     ObligationsResponse,
     OverviewResponse,
     ReviewResponse,
@@ -56,6 +58,7 @@ from sanad.features.cross_document import ask_across_documents
 from sanad.features.scenario import simulate_scenario
 from sanad.features.contradictions import find_contradictions
 from sanad.features.coverage import check_coverage
+from sanad.features.document_quality import DocumentQualityReport
 from sanad.features.obligations import extract_obligations
 from sanad.features.overview import build_overview
 from sanad.features.review import build_review
@@ -237,6 +240,20 @@ def get_risks(doc_id: str, _user: str | None = Depends(require_user)):
     text is cheap next to re-extracting the PDF."""
     record = _get_record(doc_id, _user)
     return flag_risks(chunk_document(record.text)).to_dict()
+
+
+@app.get("/api/documents/{doc_id}/quality", response_model=DocumentQualityResponse)
+def get_quality(doc_id: str, _user: str | None = Depends(require_user)):
+    """How much of this document came from OCR, and whether any page
+    looks like an extraction failure. No LLM call -- reads the per-page
+    breakdown computed once at upload time (sanad/features/document_quality.py),
+    stored alongside the document. Documents uploaded before this feature
+    existed report detailed_available=False rather than a fabricated
+    per-page breakdown."""
+    record = _get_record(doc_id, _user)
+    if record.page_quality:
+        return DocumentQualityReport.from_dict(json.loads(record.page_quality)).to_dict()
+    return DocumentQualityReport(detailed_available=False).to_dict()
 
 
 @app.get("/api/documents/{doc_id}/clauses", response_model=ClausesResponse)

@@ -9,6 +9,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 
+from sanad.features.document_quality import DocumentQualityReport, assess_document_quality
 from sanad.ingestion.chunking import Chunk, chunk_document
 from sanad.ingestion.extraction import extract_document
 from sanad.rag.vector_store import VectorStore
@@ -23,6 +24,10 @@ class IngestedDocument:
     text: str
     chunks: list[Chunk]
     used_ocr: bool
+    #: Per-page extraction quality -- computed once, here, from the real
+    #: per-page extraction result. Persisted at upload time (see db.py)
+    #: because extraction isn't re-run later just to recompute this.
+    quality: DocumentQualityReport
 
 
 def ingest_document(file_path: str, doc_id: str, vector_store: VectorStore) -> IngestedDocument:
@@ -37,4 +42,5 @@ def ingest_document(file_path: str, doc_id: str, vector_store: VectorStore) -> I
         text=extracted.text,
         chunks=chunks,
         used_ocr=extracted.used_ocr,
+        quality=assess_document_quality(extracted),
     )
