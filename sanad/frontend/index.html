@@ -735,7 +735,8 @@ function renderDocList() {
         : '<span class="risk-dot clear"><i></i>clear</span>';
     }
     b.innerHTML = '<div class="name">' + esc(d.filename) + '</div>' +
-      '<div class="sub"><span>' + d.chunk_count + ' clauses</span>' + flag +
+      '<div class="sub">' + (d.contract_type ? '<span class="pill" style="text-transform:capitalize;">' + esc(d.contract_type) + '</span>' : '') +
+      '<span>' + d.chunk_count + ' clauses</span>' + flag +
       '<span>' + ago(d.uploaded_at) + '</span></div>';
     b.onclick = () => selectDoc(d.doc_id);
     list.appendChild(b);
