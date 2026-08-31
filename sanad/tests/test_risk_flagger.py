@@ -71,6 +71,50 @@ def test_findings_sorted_by_severity():
     assert severities == sorted(severities, key=lambda s: {"high": 0, "medium": 1, "low": 2}[s])
 
 
+def test_non_compete_factors_report_duration_and_geography_when_present():
+    """The spec's own worked example: a non-compete clause's severity
+    isn't one flat label -- whether it states a duration and a geographic
+    scope are separate, checkable facts, each with its own quote."""
+    chunks = [_chunk(
+        "During your employment and for a period of 2 years thereafter, you agree not to engage "
+        "in any business which is directly or indirectly competing with the business of the "
+        "company within a radius of 50 kilometres of any company office."
+    )]
+    finding = next(f for f in flag_risks(chunks).findings if f.rule_id == "non_compete")
+    by_key = {f.key: f for f in finding.factors}
+    assert by_key["duration_specified"].present is True
+    assert "2 years" in by_key["duration_specified"].quote
+    assert by_key["geographic_scope_specified"].present is True
+    assert by_key["consideration_mentioned"].present is False
+    assert by_key["consideration_mentioned"].quote is None
+
+
+def test_non_compete_factors_all_absent_on_bare_clause():
+    """An unqualified non-compete clause -- no stated duration, scope, or
+    consideration -- should show all three factors absent rather than
+    silently omitting them; the absence is itself the useful signal."""
+    chunks = [_chunk("You agree not to engage in any business which is directly or indirectly competing with the business of the company.")]
+    finding = next(f for f in flag_risks(chunks).findings if f.rule_id == "non_compete")
+    assert all(not f.present and f.quote is None for f in finding.factors)
+    assert {f.key for f in finding.factors} == {"duration_specified", "geographic_scope_specified", "consideration_mentioned"}
+
+
+def test_rules_without_factor_checks_produce_no_factors():
+    """Most rules have no factor_checks defined -- their findings must
+    carry an empty factors list, not a crash or a fabricated breakdown."""
+    chunks = [_chunk("The Deliverables shall be deemed to be 'work for hire' and vest solely with the Company.")]
+    finding = next(f for f in flag_risks(chunks).findings if f.rule_id == "ip_assignment")
+    assert finding.factors == []
+
+
+def test_finding_to_dict_includes_factors_key():
+    chunks = [_chunk("You agree not to engage in any business which is directly or indirectly competing with the business of the company for 1 year.")]
+    finding = next(f for f in flag_risks(chunks).findings if f.rule_id == "non_compete")
+    d = finding.to_dict()
+    assert "factors" in d
+    assert d["factors"][0]["key"] == "duration_specified"
+
+
 def test_every_rule_has_explanation_and_valid_severity():
     for rule in RISK_RULES:
         assert rule.severity in {"high", "medium", "low"}, rule.rule_id

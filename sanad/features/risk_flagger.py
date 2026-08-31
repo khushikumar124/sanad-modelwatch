@@ -41,6 +41,20 @@ SEVERITY_ORDER = {"high": 0, "medium": 1, "low": 2}
 
 
 @dataclass(frozen=True)
+class RiskFactor:
+    """One decomposable sub-condition a rule's overall severity implicitly
+    depends on -- e.g. a non-compete clause is a different kind of risk
+    depending on whether it states a duration and a geographic scope.
+    Detected the same way the rule itself is (a regex against the clause's
+    own text, quoted when it matches), so a factor is either a real,
+    checkable fact about the clause or explicitly absent -- never a
+    fabricated weight or score."""
+    key: str
+    label: str
+    pattern: Pattern[str]
+
+
+@dataclass(frozen=True)
 class RiskRule:
     rule_id: str
     label: str
@@ -50,10 +64,37 @@ class RiskRule:
     #: Who the term tends to disadvantage.
     affects: str
     patterns: tuple[Pattern[str], ...]
+    #: Optional decomposable factors shown alongside the finding -- see
+    #: RiskFactor. Empty for rules where the single matched pattern is
+    #: already the whole story (most rules); populated for rules whose
+    #: real-world severity varies with details worth surfacing separately
+    #: rather than folding into one opaque label.
+    factor_checks: tuple[RiskFactor, ...] = ()
 
 
 def _p(*expressions: str) -> tuple[Pattern[str], ...]:
     return tuple(re.compile(e, re.IGNORECASE | re.DOTALL) for e in expressions)
+
+
+def _f(*factors: tuple[str, str, str]) -> tuple[RiskFactor, ...]:
+    return tuple(RiskFactor(key=k, label=label, pattern=re.compile(p, re.IGNORECASE | re.DOTALL)) for k, label, p in factors)
+
+
+#: The spec's own worked example: a non-compete clause isn't one flat risk
+#: -- an unlimited-duration, worldwide restriction with no compensation is
+#: a materially different problem than a 6-month, named-competitor one, even
+#: though both clauses fire the same rule above. Each factor is checked
+#: against the same clause text the rule matched on and reported as
+#: present/absent with its own quote, rather than being collapsed into a
+#: single number.
+NON_COMPETE_FACTORS = _f(
+    ("duration_specified", "States how long the restriction lasts",
+     r"for\s+(a\s+period\s+of\s+)?\(?\d+\)?\s*\(?\w*\)?\s*(day|month|year)s?"),
+    ("geographic_scope_specified", "States a geographic area the restriction covers",
+     r"(within\s+a\s+radius\s+of|world[-\s]?wide|anywhere\s+in|geographic(al)?\s+(area|territory|scope)|territory\s+of)"),
+    ("consideration_mentioned", "States a payment made specifically in exchange for the restriction",
+     r"(consideration|compensation|payment)\s+(paid|payable|of\s+rs\.?)[^.]{0,60}(non[-\s]?compete|restriction)"),
+)
 
 
 RISK_RULES: list[RiskRule] = [
@@ -129,6 +170,7 @@ RISK_RULES: list[RiskRule] = [
             r"not to[^.]{0,140}?(compete|competing)[^.]{0,80}?business",
             r"shall not[^.]{0,100}?engage[^.]{0,80}?(similar|competing) business",
         ),
+        factor_checks=NON_COMPETE_FACTORS,
     ),
     RiskRule(
         rule_id="deposit_forfeiture",
@@ -244,6 +286,18 @@ RISK_RULES: list[RiskRule] = [
 ]
 
 
+@dataclass(frozen=True)
+class FactorResult:
+    key: str
+    label: str
+    present: bool
+    #: The matched text when present, else None -- never fabricated.
+    quote: str | None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"key": self.key, "label": self.label, "present": self.present, "quote": self.quote}
+
+
 @dataclass
 class RiskFinding:
     rule_id: str
@@ -254,6 +308,10 @@ class RiskFinding:
     clause_heading: str | None
     excerpt: str
     chunk_index: int
+    #: Decomposable factors for this specific finding (see RiskFactor) --
+    #: empty for rules with no factor_checks defined. Never a computed
+    #: score: each entry is a real present/absent fact about the clause.
+    factors: list[FactorResult] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -265,6 +323,7 @@ class RiskFinding:
             "clause_heading": self.clause_heading,
             "excerpt": self.excerpt,
             "chunk_index": self.chunk_index,
+            "factors": [f.to_dict() for f in self.factors],
         }
 
 
@@ -311,6 +370,14 @@ def flag_risks(chunks: list[Chunk], rules: list[RiskRule] | None = None) -> Risk
                 match = pattern.search(chunk.text)
                 if match is None:
                     continue
+                factors = []
+                for fc in rule.factor_checks:
+                    fmatch = fc.pattern.search(chunk.text)
+                    factors.append(FactorResult(
+                        key=fc.key, label=fc.label,
+                        present=fmatch is not None,
+                        quote=" ".join(fmatch.group(0).split()) if fmatch else None,
+                    ))
                 findings.append(
                     RiskFinding(
                         rule_id=rule.rule_id,
@@ -321,6 +388,7 @@ def flag_risks(chunks: list[Chunk], rules: list[RiskRule] | None = None) -> Risk
                         clause_heading=chunk.heading,
                         excerpt=_excerpt_around(chunk.text, match),
                         chunk_index=chunk.index,
+                        factors=factors,
                     )
                 )
                 break  # one finding per rule per clause, not per phrasing
