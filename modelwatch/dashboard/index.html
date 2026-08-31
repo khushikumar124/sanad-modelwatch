@@ -280,6 +280,7 @@
   <div class="group">
     <div class="group-label">Intelligence</div>
     <a class="nav-item" data-page="debugger">AI Debugger (RAG X-Ray)</a>
+    <a class="nav-item" data-page="embeddings">Embeddings</a>
   </div>
   <div class="group">
     <div class="group-label">Incidents</div>
@@ -493,6 +494,18 @@ print(result["is_drifted"], result["drift_score"], result["signals"])</pre></div
         <thead><tr><th>Time</th><th>Question</th><th>Status</th><th>Best sim</th><th>Latency</th></tr></thead>
         <tbody id="traceBody"><tr><td colspan="5" class="empty">No traces recorded yet -- enable SANAD_TELEMETRY_FULL_TRACE and ask a question in Sanad.</td></tr></tbody>
       </table>
+    </div>
+  </section>
+
+  <section class="page" data-page="embeddings">
+    <div class="page-head">
+      <h1>Embeddings</h1>
+      <div class="sub">2D PCA projection of real question embeddings from stored RAG X-Ray traces -- real vectors from real requests, never a generated/fake distribution. Needs SANAD_TELEMETRY_FULL_TRACE on and at least 3 recorded requests carrying an embedding.</div>
+    </div>
+    <div class="panel">
+      <h2>Question embedding space <span class="note" id="embeddingsNote"></span></h2>
+      <div id="embeddingsStatus"></div>
+      <canvas id="embeddingsChart" height="90" style="display:none;"></canvas>
     </div>
   </section>
 
@@ -1339,6 +1352,7 @@ document.querySelectorAll(".nav-item").forEach(item => {
     if (page === "statistics") loadStatisticsPage();
     if (page === "learn") renderLearnPage();
     if (page === "connect") loadConnectStatus();
+    if (page === "embeddings") loadEmbeddings();
   });
 });
 
@@ -1600,6 +1614,66 @@ async function loadConnectStatus() {
   } catch (e) {
     box.innerHTML = '<div class="empty">' + esc(e.message) + '</div>';
   }
+}
+
+/* ---------------- embeddings (real PCA, GET /traces/embeddings) ---------------- */
+let embeddingsChart = null;
+
+async function loadEmbeddings() {
+  const status = document.getElementById("embeddingsStatus");
+  const canvas = document.getElementById("embeddingsChart");
+  document.getElementById("embeddingsNote").textContent = model ? `for ${model.name}` : "";
+  if (!modelId) { status.innerHTML = '<div class="empty">No model selected.</div>'; canvas.style.display = "none"; return; }
+
+  let body;
+  try {
+    body = await get(`/traces/embeddings?model_id=${modelId}&limit=200`);
+  } catch (e) {
+    status.innerHTML = '<div class="empty">' + esc(e.message) + '</div>';
+    canvas.style.display = "none";
+    return;
+  }
+
+  if (!body.sufficient_data) {
+    status.innerHTML = `<div class="empty">Insufficient data (${body.n_points} point(s)) -- ${esc(body.reason || "")}</div>`;
+    canvas.style.display = "none";
+    if (embeddingsChart) { embeddingsChart.destroy(); embeddingsChart = null; }
+    return;
+  }
+
+  status.innerHTML = `<div class="explain"><p>${body.n_points} real question embeddings, projected from their native dimensionality to 2D via PCA. Point color reflects whether that request was grounded or refused -- a visible split between the two suggests refusals cluster around a different topic/phrasing than grounded questions.</p></div>`;
+  canvas.style.display = "";
+
+  const grounded = body.points.filter(p => p.grounded).map(p => ({ x: p.x, y: p.y, question: p.question }));
+  const refused = body.points.filter(p => !p.grounded).map(p => ({ x: p.x, y: p.y, question: p.question }));
+
+  const datasets = [
+    { label: "Grounded", data: grounded, backgroundColor: "rgba(69,200,184,.75)", borderColor: "#45c8b8", pointRadius: 5, pointHoverRadius: 7 },
+    { label: "Refused", data: refused, backgroundColor: "rgba(229,72,77,.75)", borderColor: "#e5484d", pointRadius: 5, pointHoverRadius: 7 },
+  ];
+
+  if (embeddingsChart) { embeddingsChart.data.datasets = datasets; embeddingsChart.update("none"); return; }
+
+  embeddingsChart = new Chart(canvas, {
+    type: "scatter",
+    data: { datasets },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      scales: {
+        x: { ticks: { color: "#6b7585", font: { size: 10 } }, grid: { color: "#1d242e" }, title: { display: true, text: "PC1", color: "#6b7585" } },
+        y: { ticks: { color: "#6b7585", font: { size: 10 } }, grid: { color: "#1d242e" }, title: { display: true, text: "PC2", color: "#6b7585" } },
+      },
+      plugins: {
+        legend: { labels: { color: "#98a2b3", boxWidth: 11, boxHeight: 11, font: { size: 11 }, usePointStyle: true } },
+        tooltip: {
+          backgroundColor: "#0c1016", borderColor: "#242c38", borderWidth: 1,
+          titleColor: "#d8dee8", bodyColor: "#98a2b3", padding: 10,
+          callbacks: { label: (ctx) => ctx.raw.question ? ctx.raw.question.slice(0, 60) : "" },
+        },
+      },
+    },
+  });
+  canvas.parentElement.style.height = "320px";
 }
 
 /* ---------------- statistical analysis ---------------- */
