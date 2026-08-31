@@ -90,12 +90,20 @@ def build_review(risk_report: RiskReport, coverage_report: CoverageReport, contr
             questions.append(question)
 
     for contradiction in contradiction_report.contradictions:
+        # "Potential conflict requiring review", not "contradiction" or
+        # "conflict" stated as fact -- this heuristic only knows that two
+        # clauses in the same category state different durations, not that
+        # they're actually inconsistent (e.g. one could legitimately be an
+        # exception case the heuristic doesn't parse out). Overclaiming a
+        # real logical contradiction here is exactly the kind of confident
+        # wrong statement the spec's grounding rules exist to prevent.
         values = ", ".join(f"{v} days" for v in contradiction.values_days)
         item = ReviewItem(
             source="contradiction", severity="high",
-            title=f"Conflicting {contradiction.category} durations",
+            title=f"Potential conflict requiring review: {contradiction.category} durations differ",
             detail=f"Found {len(contradiction.obligations)} clause(s) in '{contradiction.category}' stating "
-                    f"different durations: {values}. Worth resolving which one actually governs.",
+                    f"different durations: {values}. This may be a genuine drafting inconsistency, or the "
+                    "clauses may legitimately cover different situations -- worth checking which one governs.",
             evidence={"category": contradiction.category, "values_days": contradiction.values_days},
         )
         top_issues.append(item)
