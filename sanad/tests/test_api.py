@@ -401,6 +401,46 @@ def test_overview_job_unknown_document_returns_404_immediately():
     assert res.status_code == 404
 
 
+def test_quality_returns_real_per_page_breakdown_for_a_real_upload(uploaded_doc_id):
+    """No LLM call, no job -- reads the per-page breakdown computed once
+    at upload time from the real ingestion pipeline against a real PDF."""
+    res = client.get(f"/api/documents/{uploaded_doc_id}/quality")
+    assert res.status_code == 200
+    body = res.json()
+    assert body["detailed_available"] is True
+    assert body["total_pages"] >= 1
+    assert len(body["pages"]) == body["total_pages"]
+    assert isinstance(body["summary"], str) and body["summary"]
+
+
+def test_quality_unknown_document_returns_404():
+    res = client.get("/api/documents/does-not-exist/quality")
+    assert res.status_code == 404
+
+
+def test_quality_reports_unavailable_for_a_pre_feature_row():
+    """A document row saved without page_quality (as every row was before
+    this feature existed) must report detailed_available=False rather
+    than crash or fabricate a breakdown."""
+    from sanad import db
+
+    doc_id = str(uuid.uuid4())
+    record = db.DocumentRecord(
+        doc_id=doc_id, filename="legacy.pdf", contract_type=None, chunk_count=1,
+        used_ocr=False, uploaded_at="2020-01-01T00:00:00+00:00", text="legacy text",
+        source_path="/tmp/does-not-matter.pdf",
+    )
+    db.save_document(record)
+    try:
+        res = client.get(f"/api/documents/{doc_id}/quality")
+        assert res.status_code == 200
+        body = res.json()
+        assert body["detailed_available"] is False
+        assert body["pages"] == []
+    finally:
+        db.delete_document(doc_id)
+
+
 def test_job_status_unknown_job_id_returns_404():
     res = client.get("/api/jobs/does-not-exist")
     assert res.status_code == 404

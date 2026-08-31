@@ -22,6 +22,7 @@ storage functions changed, not what callers pass or receive.
 """
 from __future__ import annotations
 
+import json
 import logging
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
@@ -69,6 +70,12 @@ documents_table = Table(
     # moment this shipped would be a worse surprise than the narrower
     # one (pre-existing documents stay shared) it trades for.
     Column("owner", String, nullable=True),
+    # Nullable, not backfilled -- same reasoning as owner above: a row
+    # from before sanad/features/document_quality.py existed has no
+    # per-page breakdown to reconstruct (extraction isn't re-run just to
+    # backfill this), and the quality endpoint reports that honestly
+    # rather than fabricating one.
+    Column("page_quality", Text, nullable=True),
 )
 
 comments_table = Table(
@@ -105,6 +112,10 @@ class DocumentRecord:
     #: off. See documents_table's own comment on what None means for
     #: access control.
     owner: str | None = None
+    #: JSON-serialized sanad.features.document_quality.DocumentQualityReport,
+    #: or None for a document uploaded before that feature existed. See
+    #: documents_table's own comment.
+    page_quality: str | None = None
 
     def to_response(self) -> dict:
         return {
@@ -134,6 +145,7 @@ class DocumentRecord:
             text=ingested.text,
             source_path=ingested.source_path,
             owner=owner,
+            page_quality=json.dumps(ingested.quality.to_dict()),
         )
 
 
@@ -173,6 +185,7 @@ def get_engine() -> Engine:
         _engine = create_engine(config.database_url, connect_args=connect_args, future=True)
         metadata.create_all(_engine)
         _migrate_add_owner_column(_engine)
+        _migrate_add_page_quality_column(_engine)
     return _engine
 
 
@@ -194,6 +207,19 @@ def _migrate_add_owner_column(engine: Engine) -> None:
         conn.execute(text("ALTER TABLE documents ADD COLUMN owner VARCHAR"))
 
 
+def _migrate_add_page_quality_column(engine: Engine) -> None:
+    """Same reasoning and pattern as _migrate_add_owner_column above."""
+    inspector = inspect(engine)
+    if "documents" not in inspector.get_table_names():
+        return
+    existing_columns = {c["name"] for c in inspector.get_columns("documents")}
+    if "page_quality" in existing_columns:
+        return
+    logger.info("migrating documents table: adding page_quality column")
+    with engine.begin() as conn:
+        conn.execute(text("ALTER TABLE documents ADD COLUMN page_quality TEXT"))
+
+
 def reset_engine() -> None:
     """Test-only: drop the cached engine so a new one (e.g. pointed at a
     fresh tmp_path database) is created on next use."""
@@ -208,6 +234,7 @@ def _row_to_record(row) -> DocumentRecord:
         doc_id=row.doc_id, filename=row.filename, contract_type=row.contract_type,
         chunk_count=row.chunk_count, used_ocr=bool(row.used_ocr), uploaded_at=row.uploaded_at,
         text=row.text, source_path=row.source_path, owner=row.owner,
+        page_quality=getattr(row, "page_quality", None),
     )
 
 

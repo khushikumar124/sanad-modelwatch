@@ -120,6 +120,16 @@ class OverviewResponse(BaseModel):
     parse_error: bool
 
 
+class DocumentQualityResponse(BaseModel):
+    pages: list[dict[str, Any]]
+    total_pages: int
+    ocr_page_count: int
+    low_text_page_count: int
+    used_ocr: bool
+    summary: str
+    detailed_available: bool
+
+
 class CoverageResponse(BaseModel):
     results: list[dict[str, Any]]
     not_found_count: int

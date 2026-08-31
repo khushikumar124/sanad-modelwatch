@@ -1197,26 +1197,42 @@ function renderOverview(overview) {
 
 /* ---------------- document (click-to-source target) ---------------- */
 const documentCache = {};   // doc_id -> clauses[]
+const qualityCache = {};    // doc_id -> quality report
 let documentComments = [];  // comments for the currently loaded document
 
 async function loadDocument(id, jumpToClause) {
   const body = document.getElementById("documentBody");
   body.innerHTML = '<div class="skel"><div style="width:30%"></div><div style="width:95%"></div><div style="width:88%"></div><div style="width:92%"></div></div>';
   try {
-    const [{ clauses }, { comments }] = await Promise.all([
+    const [{ clauses }, { comments }, quality] = await Promise.all([
       documentCache[id] ? Promise.resolve({ clauses: documentCache[id] }) : api("/documents/" + id + "/clauses"),
       api("/documents/" + id + "/comments"),
+      qualityCache[id] ? Promise.resolve(qualityCache[id]) : api("/documents/" + id + "/quality").catch(() => null),
     ]);
     documentCache[id] = clauses;
     documentComments = comments;
-    if (currentId === id) renderDocument(clauses, jumpToClause);
+    if (quality) qualityCache[id] = quality;
+    if (currentId === id) renderDocument(clauses, jumpToClause, quality);
   } catch (e) { body.innerHTML = '<p class="none">' + esc(e.message) + '</p>'; }
 }
 
-function renderDocument(clauses, jumpToClause) {
+// Only worth a banner when there's something to actually check --
+// clean native-text extraction (the common case) shows nothing extra.
+function renderQualityBanner(quality) {
+  if (!quality || !quality.detailed_available) return "";
+  if (!quality.used_ocr && quality.low_text_page_count === 0) return "";
+  const lowTextPages = quality.pages.filter(p => p.flagged_low_text).map(p => p.page_number);
+  return '<div class="disclaimer" style="margin-bottom:16px;">' +
+    '<strong>Extraction quality: </strong>' + esc(quality.summary) +
+    (lowTextPages.length ? ' (page' + (lowTextPages.length > 1 ? 's' : '') + ' ' + lowTextPages.join(", ") + ')' : '') +
+    '</div>';
+}
+
+function renderDocument(clauses, jumpToClause, quality) {
   const body = document.getElementById("documentBody");
   const commentsFor = idx => documentComments.filter(c => c.chunk_index === idx);
-  body.innerHTML = clauses.map(c => {
+  const banner = renderQualityBanner(quality);
+  body.innerHTML = banner + clauses.map(c => {
     const cs = commentsFor(c.index);
     return `
     <div class="clause" id="clause-${c.index}">
