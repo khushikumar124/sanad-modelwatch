@@ -7,6 +7,7 @@ layer: GET /config, which exposes real configured thresholds for the
 dashboard's Statistical Analysis page to read, rather than the frontend
 hardcoding a copy that could drift from modelwatch/config.py.
 """
+import uuid
 from dataclasses import replace
 
 import pytest
@@ -39,6 +40,84 @@ def test_config_endpoint_never_exposes_paths_or_secrets(client):
     body = res.json()
     forbidden_keys = {"db_path", "api_host", "api_port", "alert_webhook_url", "mlflow_tracking_uri"}
     assert forbidden_keys.isdisjoint(body.keys())
+
+
+def _record_trace(client, trace_id, model_id, question_embedding, grounded=True, question="q"):
+    return client.post("/traces", json={
+        "trace_id": trace_id, "model_id": model_id,
+        "data": {"question": question, "grounded": grounded, "question_embedding": question_embedding},
+    })
+
+
+@pytest.fixture
+def unique_id():
+    """This test file's `client` fixture uses the app's real, shared
+    storage (the same modelwatch.db a running server would use) rather
+    than an isolated one -- fine for the drift-lab/counterfactual tests
+    above, which never touch persistent storage, but the trace-recording
+    tests below need trace_id/model_id that can't collide with a
+    previous run's leftover rows in that same real database. A fresh
+    uuid per test run, not a fixed literal, is what actually guarantees
+    that."""
+    return uuid.uuid4().hex[:8]
+
+
+def test_embeddings_endpoint_reports_insufficient_data_with_fewer_than_three_points(client, unique_id):
+    model_id = f"embed-test-1-{unique_id}"
+    _record_trace(client, f"t1-{unique_id}", model_id, [1.0, 0.0, 0.0])
+    _record_trace(client, f"t2-{unique_id}", model_id, [0.0, 1.0, 0.0])
+
+    res = client.get(f"/traces/embeddings?model_id={model_id}")
+    assert res.status_code == 200
+    body = res.json()
+    assert body["sufficient_data"] is False
+    assert body["n_points"] == 2
+    assert body["points"] == []
+
+
+def test_embeddings_endpoint_projects_real_points_to_2d(client, unique_id):
+    model_id = f"embed-test-2-{unique_id}"
+    _record_trace(client, f"t1-{unique_id}", model_id, [1.0, 0.0, 0.0, 0.0])
+    _record_trace(client, f"t2-{unique_id}", model_id, [0.0, 1.0, 0.0, 0.0])
+    _record_trace(client, f"t3-{unique_id}", model_id, [0.0, 0.0, 1.0, 0.0])
+
+    res = client.get(f"/traces/embeddings?model_id={model_id}")
+    body = res.json()
+    assert body["sufficient_data"] is True
+    assert body["n_points"] == 3
+    assert len(body["points"]) == 3
+    for p in body["points"]:
+        assert isinstance(p["x"], float)
+        assert isinstance(p["y"], float)
+        assert "trace_id" in p and "grounded" in p
+
+
+def test_embeddings_endpoint_excludes_traces_with_no_embedding(client, unique_id):
+    model_id = f"embed-test-3-{unique_id}"
+    _record_trace(client, f"t1-{unique_id}", model_id, [1.0, 0.0])
+    _record_trace(client, f"t2-{unique_id}", model_id, [0.0, 1.0])
+    client.post("/traces", json={
+        "trace_id": f"t3-{unique_id}", "model_id": model_id, "data": {"question": "no embedding here"},
+    })
+
+    res = client.get(f"/traces/embeddings?model_id={model_id}")
+    body = res.json()
+    # only 2 of the 3 traces carry an embedding -- still insufficient (< 3)
+    assert body["n_points"] == 2
+    assert body["sufficient_data"] is False
+
+
+def test_embeddings_endpoint_scopes_to_requested_model_id(client, unique_id):
+    model_a, model_b = f"model-a-{unique_id}", f"model-b-{unique_id}"
+    _record_trace(client, f"a1-{unique_id}", model_a, [1.0, 0.0])
+    _record_trace(client, f"a2-{unique_id}", model_a, [0.0, 1.0])
+    _record_trace(client, f"a3-{unique_id}", model_a, [1.0, 1.0])
+    _record_trace(client, f"b1-{unique_id}", model_b, [2.0, 2.0])
+
+    res = client.get(f"/traces/embeddings?model_id={model_a}")
+    body = res.json()
+    assert body["n_points"] == 3
+    assert all(p["trace_id"].startswith("a") for p in body["points"])
 
 
 def test_config_endpoint_reflects_health_hysteresis_settings(client, monkeypatch):

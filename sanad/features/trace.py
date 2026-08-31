@@ -112,6 +112,14 @@ class RAGTrace:
     citation_score: float | None
     retrieval_latency_ms: float
     generation_latency_ms: float
+    #: the question's own embedding vector -- rides along in the trace
+    #: (already gated behind SANAD_TELEMETRY_FULL_TRACE like everything
+    #: else here) specifically so ModelWatch's RAG X-Ray store, which
+    #: persists whatever this dict contains, ends up with real,
+    #: queryable embedding history for free -- no new storage needed on
+    #: ModelWatch's side, since traces are already stored as an opaque
+    #: JSON blob. See modelwatch/api/app.py's /traces/embeddings.
+    question_embedding: list[float] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -129,6 +137,7 @@ class RAGTrace:
             "citation_score": self.citation_score,
             "retrieval_latency_ms": self.retrieval_latency_ms,
             "generation_latency_ms": self.generation_latency_ms,
+            "question_embedding": [round(float(v), 6) for v in self.question_embedding],
         }
 
 
@@ -225,4 +234,5 @@ def build_trace(
         citation_score=citation_score,
         retrieval_latency_ms=answer.retrieval_latency_ms,
         generation_latency_ms=answer.generation_latency_ms,
+        question_embedding=embedder.embed_one(question),
     )

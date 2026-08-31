@@ -200,6 +200,64 @@ def list_traces(model_id: str | None = None, limit: int = 50, grounded: bool | N
     return engine.list_traces(model_id=model_id, limit=limit, grounded=grounded)
 
 
+@app.get("/traces/embeddings")
+def get_trace_embeddings(model_id: str | None = None, limit: int = 100):
+    """2D PCA projection of real question embeddings pulled from stored
+    RAG X-Ray traces -- see sanad/features/trace.py's question_embedding
+    field, which rides along in the trace specifically so this has real
+    data to read instead of needing new storage. Returns "insufficient
+    data" rather than a projection when fewer than 3 traces carry an
+    embedding: PCA on 1-2 points is meaningless, and 2 components need
+    at least that many samples to be well-defined.
+
+    Never fabricates points -- a trace recorded before this field
+    existed, or recorded with SANAD_TELEMETRY_FULL_TRACE off, is simply
+    excluded, not zero-filled.
+    """
+    traces = engine.list_traces(model_id=model_id, limit=limit)
+    points = []
+    for t in traces:
+        data = t.get("data") or {}
+        embedding = data.get("question_embedding")
+        if embedding:
+            points.append({
+                "trace_id": t["trace_id"],
+                "question": data.get("question", ""),
+                "grounded": bool(data.get("grounded", False)),
+                "embedding": embedding,
+            })
+
+    if len(points) < 3:
+        return {
+            "sufficient_data": False,
+            "n_points": len(points),
+            "reason": "fewer than 3 traces with a recorded question_embedding -- "
+                      "needs SANAD_TELEMETRY_FULL_TRACE on and at least 3 real requests",
+            "points": [],
+        }
+
+    from sklearn.decomposition import PCA
+
+    vectors = [p["embedding"] for p in points]
+    n_components = min(2, len(vectors[0]))
+    projected = PCA(n_components=n_components).fit_transform(vectors)
+
+    return {
+        "sufficient_data": True,
+        "n_points": len(points),
+        "points": [
+            {
+                "trace_id": p["trace_id"],
+                "question": p["question"],
+                "grounded": p["grounded"],
+                "x": float(projected[i][0]),
+                "y": float(projected[i][1]) if n_components > 1 else 0.0,
+            }
+            for i, p in enumerate(points)
+        ],
+    }
+
+
 @app.get("/traces/{trace_id}", response_model=TraceResponse)
 def get_trace(trace_id: str):
     trace = engine.get_trace(trace_id)
