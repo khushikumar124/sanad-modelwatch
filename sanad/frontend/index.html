@@ -158,9 +158,17 @@
   .tabs {
     display: flex; gap: 2px; padding: 16px 26px 0; border-bottom: 1px solid var(--line);
     flex: none; align-items: center;
+    /* Nine tabs don't fit every viewport -- scroll rather than silently
+       clip tabs off the right edge (the old flex-with-no-overflow
+       behaviour), with a thin scrollbar as the only visual hint. */
+    overflow-x: auto; scrollbar-width: thin;
+  }
+  .tab-sep {
+    flex: none; width: 1px; align-self: stretch; margin: 8px 6px; background: var(--line);
   }
   .tab {
     background: none; border: none; cursor: pointer; position: relative;
+    flex: none;
     padding: 9px 15px 12px; font-size: 13.5px; font-weight: 550; color: var(--muted);
     border-radius: var(--r-sm) var(--r-sm) 0 0;
     transition: color .15s ease, background .15s ease;
@@ -635,14 +643,17 @@
           <div class="meta" id="docMeta"></div>
         </div>
         <div class="tabs">
-          <button class="tab active" data-pane="risks">Risk scan <span class="count" id="tabRiskCount"></span></button>
           <button class="tab" data-pane="overview">Overview</button>
+          <button class="tab active" data-pane="risks">Risk scan <span class="count" id="tabRiskCount"></span></button>
+          <button class="tab" data-pane="review">Review</button>
+          <span class="tab-sep"></span>
           <button class="tab" data-pane="summary">Summary</button>
           <button class="tab" data-pane="ask">Ask</button>
           <button class="tab" data-pane="scenario">Scenario</button>
+          <span class="tab-sep"></span>
           <button class="tab" data-pane="compare">Compare</button>
           <button class="tab" data-pane="versions">Versions</button>
-          <button class="tab" data-pane="review">Review</button>
+          <span class="tab-sep"></span>
           <button class="tab" data-pane="document">Document</button>
           <span style="flex:1"></span>
           <button class="linkish" id="deleteBtn" title="Remove this document">Remove</button>
