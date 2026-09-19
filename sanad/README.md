@@ -20,12 +20,24 @@ scanned image and get:
 
 Built on top of those, a **contract intelligence** layer (`features/`):
 
+- **Contract Overview** (`overview.py`) — orient yourself in a contract
+  before reading it clause by clause: 15 key fields (dates, payment,
+  termination, governing law, confidentiality, non-compete, liability,
+  and more), parties, and major obligations, each with an explicit
+  status — `found` / `not_found` / `unclear` / `insufficient_evidence`
+  — rather than an empty list standing in for both "absent" and
+  "extraction failed". A `found`/`unclear` field whose quote doesn't
+  actually check out against the document is downgraded to
+  `insufficient_evidence` instead of shown as fact. A **Knowledge map**
+  (inline SVG, no charting library) renders the extracted parties and
+  found terms as a hub-and-spoke diagram, purely as a re-arrangement of
+  that same grounded data — click a grounded node to jump to its clause.
 - **Obligation extraction** (`obligations.py`) — who owes what to whom,
   with a deadline where the document states one. Every extracted
   obligation is grounded back to the chunk it came from (exact match,
-  falling back to content-word overlap for paraphrase) — an obligation
-  the grounding check can't locate in the document is dropped rather
-  than shown as fact.
+  falling back to content-word overlap for paraphrase, shared with
+  `overview.py` via `grounding.py`) — kept but flagged `unverified`
+  rather than dropped when the grounding check can't locate it.
 - **Coverage scan** (`coverage.py`) — checks the document against 9
   standard clause categories (termination, notice period,
   confidentiality, IP ownership, dispute resolution, liability, payment,
@@ -35,18 +47,56 @@ Built on top of those, a **contract intelligence** layer (`features/`):
 - **Contradiction detection** (`contradictions.py`) — flags conflicting
   duration statements (e.g. two different notice periods), scoped to the
   categories where a numeric mismatch is unambiguous rather than
-  guessed.
+  guessed. Surfaced in Review as "potential conflict requiring review",
+  never asserted as a confirmed drafting error — the heuristic can only
+  tell the numbers differ, not why.
+- **Decomposable risk factors** (`risk_flagger.py`) — some findings
+  (currently non-compete clauses) break down further into specific,
+  checkable facts: does the clause state a duration? A geographic
+  scope? Compensation for the restriction? Each is a real regex match
+  against that clause's own text, shown present/absent with its quote
+  — never a computed score.
 - **Review synthesis** (`review.py`) — combines risk findings, coverage
   gaps, and contradictions into one report, with a suggested negotiation
   question per flagged risk. Pure synthesis of already-computed results,
   no additional LLM call.
+- **Scenario Simulator** (`scenario.py`) — "what happens if I leave
+  early?"-style hypothetical questions, answered the same
+  evidence-first, cited way as the chatbot but with a system prompt
+  tuned for "what if" reasoning instead of direct lookups.
+- **Cross-document chat** (`cross_document.py`) — ask one question
+  across two uploaded documents at once (e.g. "does the notice period
+  match?"), with citations labelled by which document they came from.
+- **RAG trace / claim verification** (`trace.py`) — every chatbot answer
+  carries an observable pipeline trace: ranked retrieval with distance/
+  similarity per chunk, which chunks were cited, and a per-sentence
+  claim verification (Supported / Partially supported / Unsupported)
+  scored against the retrieved evidence via the same embeddings the
+  retrieval itself uses. A heuristic triage aid, documented as one — not
+  a certified fact-check.
+- **Document comparison** (`comparison.py`) — diffs the risk profile of
+  two uploaded documents, with a semantic-impact explanation per row
+  (who's affected, which document, and — for rules present in both — an
+  explicit note that shared presence doesn't mean identical wording).
+- **Document Quality Analysis** (`document_quality.py`) — reports how
+  much of the document came from OCR and flags pages with unusually
+  little extracted text as worth a manual check (not declared broken —
+  a real short page is possible too). Computed once at upload time from
+  real per-page extraction signals; no OCR confidence score is
+  fabricated.
+- **Version History** (`db.py`) — link a new upload to an existing
+  document as its next version (`new_version_of` on upload); the
+  Versions tab lists the whole chain and can jump straight into
+  Compare with any prior version pre-selected.
 - **Risk heatmap + click-to-source** (`frontend/index.html`) — every
   clause in the document is addressable by index (`/api/documents/{id}/clauses`),
-  so a risk/coverage/obligation finding can jump straight to the exact
-  clause it's about, and the heatmap colors the whole document by
-  per-clause severity.
-- **Document comparison** (`comparison.py`) — diffs the risk profile of
-  two uploaded documents (e.g. two drafts of the same contract).
+  so a risk/coverage/obligation/knowledge-map finding can jump straight
+  to the exact clause it's about, and the heatmap colors the whole
+  document by per-clause severity.
+- **Learn panel** (`frontend/index.html`) — an in-app overlay explaining
+  what each status label actually means (grounded/verified, the four
+  Overview statuses, claim verification, "potential conflict", OCR
+  quality flags) and, just as important, what it doesn't claim.
 
 All features share one ingestion pipeline (extraction → chunking →
 embedding → vector store) — see `rag/pipeline.py` — and one document

@@ -46,7 +46,7 @@ Tests need no servers running at all:
 python -m pytest -v
 ```
 
-301 tests, real end-to-end coverage (real HTTP servers via
+489 tests, real end-to-end coverage (real HTTP servers via
 `pytest-httpserver`, a real mocked S3 API via `moto`, and this session's
 work was also verified against an actual local Postgres instance) —
 mocking is used only where the alternative is calling a real network
