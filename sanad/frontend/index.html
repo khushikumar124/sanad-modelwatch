@@ -17,7 +17,12 @@
     --surface-2:  #faf6ee;
     --ink:        #221f1a;
     --ink-soft:   #554f45;
-    --muted:      #857c6d;
+    /* WCAG AA needs >=4.5:1 for normal-size text against --paper; the
+       original #857c6d measured ~3.78:1 (fails) -- darkened to hit
+       ~4.6:1 while staying in the same warm grey-brown family, since
+       this is used everywhere for secondary/caption text at normal
+       size, not just large-text UI chrome (which only needs 3:1). */
+    --muted:      #756c5d;
     --line:       #e4dccc;
     --line-soft:  #efe8db;
     --accent:     #a85c1a;
