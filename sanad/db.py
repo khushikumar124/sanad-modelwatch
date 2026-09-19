@@ -39,6 +39,7 @@ from sqlalchemy import (
     delete,
     inspect,
     insert,
+    or_,
     select,
     text,
 )
@@ -76,6 +77,18 @@ documents_table = Table(
     # backfill this), and the quality endpoint reports that honestly
     # rather than fabricating one.
     Column("page_quality", Text, nullable=True),
+    # Version History: every document belongs to a version chain.
+    # version_group_id defaults to the document's own doc_id (a document
+    # uploaded standalone is version 1 of its own one-document chain);
+    # uploading explicitly "as a new version of" an existing document
+    # copies that document's version_group_id and increments
+    # version_number. Nullable for pre-existing rows, backfilled lazily
+    # to "own doc_id, version 1" the first time a row is read (see
+    # _row_to_record) rather than via a bulk migration -- cheaper, and
+    # every legacy row *is* genuinely its own one-document chain, so
+    # there's nothing to actually reconstruct.
+    Column("version_group_id", String, nullable=True),
+    Column("version_number", Integer, nullable=True),
 )
 
 comments_table = Table(
@@ -116,6 +129,9 @@ class DocumentRecord:
     #: or None for a document uploaded before that feature existed. See
     #: documents_table's own comment.
     page_quality: str | None = None
+    #: See documents_table's own comment on version_group_id/version_number.
+    version_group_id: str | None = None
+    version_number: int | None = None
 
     def to_response(self) -> dict:
         return {
@@ -125,6 +141,7 @@ class DocumentRecord:
             "chunk_count": self.chunk_count,
             "used_ocr": self.used_ocr,
             "uploaded_at": self.uploaded_at,
+            "version_number": self.version_number,
         }
 
     @classmethod
@@ -134,6 +151,8 @@ class DocumentRecord:
         filename: str,
         contract_type: str | None,
         owner: str | None = None,
+        version_group_id: str | None = None,
+        version_number: int = 1,
     ) -> "DocumentRecord":
         return cls(
             doc_id=ingested.doc_id,
@@ -146,6 +165,12 @@ class DocumentRecord:
             source_path=ingested.source_path,
             owner=owner,
             page_quality=json.dumps(ingested.quality.to_dict()),
+            # A standalone upload is version 1 of its own one-document
+            # chain -- its version_group_id is its own doc_id unless the
+            # caller explicitly says this is a new version of an
+            # existing document.
+            version_group_id=version_group_id or ingested.doc_id,
+            version_number=version_number,
         )
 
 
@@ -186,6 +211,7 @@ def get_engine() -> Engine:
         metadata.create_all(_engine)
         _migrate_add_owner_column(_engine)
         _migrate_add_page_quality_column(_engine)
+        _migrate_add_version_columns(_engine)
     return _engine
 
 
@@ -220,6 +246,23 @@ def _migrate_add_page_quality_column(engine: Engine) -> None:
         conn.execute(text("ALTER TABLE documents ADD COLUMN page_quality TEXT"))
 
 
+def _migrate_add_version_columns(engine: Engine) -> None:
+    """Same reasoning and pattern as the migrations above. Existing rows
+    are left with NULL version_group_id/version_number -- _row_to_record
+    backfills the natural value (own doc_id, version 1) at read time
+    rather than via a bulk UPDATE, since that value needs no computation."""
+    inspector = inspect(engine)
+    if "documents" not in inspector.get_table_names():
+        return
+    existing_columns = {c["name"] for c in inspector.get_columns("documents")}
+    if "version_group_id" in existing_columns:
+        return
+    logger.info("migrating documents table: adding version_group_id/version_number columns")
+    with engine.begin() as conn:
+        conn.execute(text("ALTER TABLE documents ADD COLUMN version_group_id VARCHAR"))
+        conn.execute(text("ALTER TABLE documents ADD COLUMN version_number INTEGER"))
+
+
 def reset_engine() -> None:
     """Test-only: drop the cached engine so a new one (e.g. pointed at a
     fresh tmp_path database) is created on next use."""
@@ -235,6 +278,10 @@ def _row_to_record(row) -> DocumentRecord:
         chunk_count=row.chunk_count, used_ocr=bool(row.used_ocr), uploaded_at=row.uploaded_at,
         text=row.text, source_path=row.source_path, owner=row.owner,
         page_quality=getattr(row, "page_quality", None),
+        # A legacy row with no version columns is, genuinely, its own
+        # one-document chain -- backfilled at read time, not stored.
+        version_group_id=getattr(row, "version_group_id", None) or row.doc_id,
+        version_number=getattr(row, "version_number", None) or 1,
     )
 
 
@@ -254,6 +301,26 @@ def list_documents() -> list[DocumentRecord]:
     with get_engine().connect() as conn:
         rows = conn.execute(select(documents_table).order_by(documents_table.c.uploaded_at)).all()
         return [_row_to_record(r) for r in rows]
+
+
+def list_version_group(version_group_id: str) -> list[DocumentRecord]:
+    """Every document sharing a version chain, oldest (version 1) first.
+    Matches on the stored version_group_id, plus the "IS NULL and this
+    is its own doc_id" case for legacy rows the migration didn't
+    backfill (see documents_table's own comment) -- a legacy row's
+    chain is always just itself."""
+    with get_engine().connect() as conn:
+        rows = conn.execute(
+            select(documents_table).where(
+                or_(
+                    documents_table.c.version_group_id == version_group_id,
+                    (documents_table.c.version_group_id.is_(None)) & (documents_table.c.doc_id == version_group_id),
+                )
+            )
+        ).all()
+        records = [_row_to_record(r) for r in rows]
+        records.sort(key=lambda r: (r.version_number or 1, r.uploaded_at))
+        return records
 
 
 def delete_document(doc_id: str) -> None:

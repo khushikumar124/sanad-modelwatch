@@ -37,7 +37,36 @@ def _record(doc_id="doc-1", **overrides):
 def test_save_and_get_document_round_trips(fresh_db):
     db.save_document(_record())
     fetched = db.get_document("doc-1")
-    assert fetched == _record()
+    # version_group_id/version_number are backfilled at read time when
+    # not explicitly set at save time (a standalone document is version
+    # 1 of its own one-document chain) -- see db.py's _row_to_record.
+    assert fetched == _record(version_group_id="doc-1", version_number=1)
+
+
+def test_version_group_id_and_number_round_trip_when_explicitly_set(fresh_db):
+    db.save_document(_record(doc_id="doc-2", version_group_id="doc-1", version_number=2))
+    fetched = db.get_document("doc-2")
+    assert fetched.version_group_id == "doc-1"
+    assert fetched.version_number == 2
+
+
+def test_list_version_group_returns_the_whole_chain_oldest_first(fresh_db):
+    db.save_document(_record(doc_id="doc-1", version_group_id="doc-1", version_number=1))
+    db.save_document(_record(doc_id="doc-2", version_group_id="doc-1", version_number=2))
+    db.save_document(_record(doc_id="doc-3", version_group_id="doc-1", version_number=3))
+    db.save_document(_record(doc_id="unrelated"))  # a different, standalone chain
+
+    chain = db.list_version_group("doc-1")
+    assert [r.doc_id for r in chain] == ["doc-1", "doc-2", "doc-3"]
+
+
+def test_list_version_group_of_a_standalone_legacy_document_is_just_itself(fresh_db):
+    """A row saved with no version columns at all (as every row was
+    before this feature existed) must still resolve to a one-document
+    chain of itself, via the version_group_id IS NULL fallback."""
+    db.save_document(_record(doc_id="legacy-doc", version_group_id=None, version_number=None))
+    chain = db.list_version_group("legacy-doc")
+    assert [r.doc_id for r in chain] == ["legacy-doc"]
 
 
 def test_get_unknown_document_returns_none(fresh_db):

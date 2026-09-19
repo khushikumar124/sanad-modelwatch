@@ -42,6 +42,7 @@ from sanad.api.schemas import (
     DocumentQualityResponse,
     ObligationsResponse,
     OverviewResponse,
+    VersionsResponse,
     ReviewResponse,
     RiskResponse,
     ScenarioRequest,
@@ -174,6 +175,7 @@ def logout(response: Response):
 async def upload_document(
     file: UploadFile = File(...),
     contract_type: str | None = Form(None),
+    new_version_of: str | None = Form(None),
     _user: str | None = Depends(require_user),
 ):
     ext = Path(file.filename or "").suffix.lower()
@@ -189,6 +191,18 @@ async def upload_document(
     except UploadValidationError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
+    # Version History: uploading "as a new version of" an existing,
+    # accessible document joins its version chain instead of starting a
+    # new one. 404s the same way every other doc_id-taking endpoint does
+    # if the caller can't access it -- a new version must build on a
+    # document you can actually see.
+    version_group_id: str | None = None
+    version_number = 1
+    if new_version_of:
+        prior = _get_record(new_version_of, _user)
+        version_group_id = prior.version_group_id
+        version_number = max((r.version_number or 1) for r in db.list_version_group(version_group_id)) + 1
+
     doc_id = str(uuid.uuid4())
     locator = object_store.save(doc_id, ext, data)
 
@@ -197,12 +211,24 @@ async def upload_document(
     ingested.source_path = locator
 
     record = db.DocumentRecord.from_ingested(
-        ingested, filename=file.filename or f"{doc_id}{ext}", contract_type=contract_type, owner=_user
+        ingested, filename=file.filename or f"{doc_id}{ext}", contract_type=contract_type, owner=_user,
+        version_group_id=version_group_id, version_number=version_number,
     )
     db.save_document(record)
 
     logger.info("document uploaded", extra={"doc_id": doc_id, "doc_filename": record.filename})
     return record.to_response()
+
+
+@app.get("/api/documents/{doc_id}/versions", response_model=VersionsResponse)
+def get_versions(doc_id: str, _user: str | None = Depends(require_user)):
+    """Every document in this one's version chain, oldest first -- see
+    db.py's list_version_group(). A standalone document (never uploaded
+    "as a new version of" anything, and nothing uploaded as a new
+    version of it) is a one-entry chain of just itself."""
+    record = _get_record(doc_id, _user)
+    versions = db.list_version_group(record.version_group_id)
+    return {"versions": [v.to_response() for v in versions if _can_access(v, _user)]}
 
 
 @app.get("/api/documents", response_model=list[DocumentResponse])

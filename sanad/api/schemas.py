@@ -120,6 +120,10 @@ class OverviewResponse(BaseModel):
     parse_error: bool
 
 
+class VersionsResponse(BaseModel):
+    versions: list[dict[str, Any]]
+
+
 class DocumentQualityResponse(BaseModel):
     pages: list[dict[str, Any]]
     total_pages: int
