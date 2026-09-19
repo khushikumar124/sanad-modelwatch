@@ -1334,7 +1334,55 @@ function renderOverview(overview) {
     <h3 style="font-family:var(--serif);font-size:18px;margin:0 0 8px;">Major obligations</h3>
     <div style="margin-bottom:8px;">${itemList(overview.major_obligations)}</div>
     <div class="disclaimer">Every "found" or "unclear" item above is checked against the document's own wording -- a claim that doesn't check out is shown as "insufficient evidence" rather than stated as fact. "Not found" means the contract doesn't address that topic, not that something is missing or wrong.</div>
+
+    <h3 style="font-family:var(--serif);font-size:18px;margin:24px 0 8px;">Knowledge map</h3>
+    <div style="margin-bottom:8px;">${renderKnowledgeMap(overview)}</div>
+    <div class="disclaimer">Parties and terms shown here are exactly the ones above -- nothing new is inferred for this view. A solid line means the connected item is grounded in the document's own text; click a grounded node to jump to its clause.</div>
   `;
+  body.querySelectorAll("[data-jump-clause]").forEach(el => {
+    el.style.cursor = "pointer";
+    el.addEventListener("click", () => goToClause(parseInt(el.dataset.jumpClause, 10)));
+  });
+}
+
+/* Renders the extracted parties and "found" key terms as a simple hub-
+   and-spoke relationship diagram -- the document at the centre, every
+   party and confirmed term as a spoke around it. Deliberately built
+   only from data renderOverview already has (no new extraction call,
+   no invented relationships): this is a visual re-arrangement of the
+   Parties/Key terms sections above, not a new claim about the
+   contract. Node count is naturally bounded (parties + <=15 fields),
+   so a fixed radial layout never gets overcrowded. */
+function renderKnowledgeMap(overview) {
+  const nodes = [
+    ...overview.parties.map(p => ({ label: p.text, grounded: p.grounded, evidenceIdx: p.evidence_chunk_index, kind: "party" })),
+    ...overview.fields.filter(f => f.status === "found").map(f => ({ label: f.label, grounded: true, evidenceIdx: f.evidence_chunk_index, kind: "term" })),
+  ];
+  if (!nodes.length) return '<p class="none">Nothing grounded enough to map yet.</p>';
+
+  const W = 640, H = 340, cx = W / 2, cy = H / 2, r = Math.min(W, H) / 2 - 90;
+  const truncate = s => s.length > 26 ? s.slice(0, 24) + "…" : s;
+
+  const spokes = nodes.map((n, i) => {
+    const angle = (i / nodes.length) * Math.PI * 2 - Math.PI / 2;
+    const x = cx + r * Math.cos(angle), y = cy + r * Math.sin(angle);
+    const clickable = n.grounded && n.evidenceIdx !== null && n.evidenceIdx !== undefined;
+    const color = n.kind === "party" ? "var(--accent)" : "var(--good)";
+    return {
+      line: `<line x1="${cx}" y1="${cy}" x2="${x}" y2="${y}" stroke="${n.grounded ? color : "var(--line)"}" stroke-width="1.5" stroke-dasharray="${n.grounded ? "0" : "4,3"}" opacity="${n.grounded ? 0.55 : 0.35}" />`,
+      node: `<g ${clickable ? `data-jump-clause="${n.evidenceIdx}"` : ""}>
+        <circle cx="${x}" cy="${y}" r="5.5" fill="${color}" opacity="${n.grounded ? 1 : 0.4}" />
+        <text x="${x + (Math.cos(angle) >= 0 ? 10 : -10)}" y="${y + 4}" font-size="11.5" fill="var(--ink-soft)" text-anchor="${Math.cos(angle) >= 0 ? "start" : "end"}">${esc(truncate(n.label))}<title>${esc(n.label)}</title></text>
+      </g>`,
+    };
+  });
+
+  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;max-width:640px;display:block;" xmlns="http://www.w3.org/2000/svg">
+    ${spokes.map(s => s.line).join("")}
+    <circle cx="${cx}" cy="${cy}" r="34" fill="var(--surface-2)" stroke="var(--line)" />
+    <text x="${cx}" y="${cy + 4}" font-size="11" font-weight="600" fill="var(--ink)" text-anchor="middle">Contract</text>
+    ${spokes.map(s => s.node).join("")}
+  </svg>`;
 }
 
 /* ---------------- document (click-to-source target) ---------------- */
