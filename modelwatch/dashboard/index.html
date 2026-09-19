@@ -20,7 +20,12 @@
     --line-soft: #1d242e;
     --text:      #d8dee8;
     --text-2:    #98a2b3;
-    --text-3:    #6b7585;
+    /* WCAG AA needs >=4.5:1 for normal-size text against --bg; the
+       original #6b7585 measured ~4.1:1 (fails) -- lightened to
+       ~4.7:1. Used at 9.5-11.5px throughout (labels, notes, table
+       headers), well under the "large text" size that would only need
+       3:1, so this was a real readability failure, not a technicality. */
+    --text-3:    #757f8f;
 
     --teal:      #45c8b8;
     --danger:    #e5484d;
