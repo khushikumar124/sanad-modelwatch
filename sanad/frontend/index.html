@@ -319,6 +319,7 @@
   .heatmap-cell {
     flex: 1; height: 22px; border-radius: 3px; background: var(--line-soft); cursor: pointer;
     transition: transform .1s ease, opacity .1s ease; min-width: 5px;
+    border: none; padding: 0; display: block;
   }
   .heatmap-cell:hover { transform: scaleY(1.25); opacity: .85; }
   .heatmap-cell.high { background: var(--high); }
@@ -1009,9 +1010,10 @@ function renderHeatmap(r) {
     }
   });
 
-  const cells = severityAt.map((sev, i) =>
-    '<div class="heatmap-cell' + (sev ? " " + sev : "") + '" title="Clause ' + (i + 1) + (sev ? ": " + sev + " risk" : ": no flagged risk") +
-    ' — click to view" onclick="goToClause(' + i + ')"></div>').join("");
+  const cells = severityAt.map((sev, i) => {
+    const label = "Clause " + (i + 1) + (sev ? ": " + sev + " risk" : ": no flagged risk") + " — click to view";
+    return '<button class="heatmap-cell' + (sev ? " " + sev : "") + '" title="' + label + '" aria-label="' + label + '" onclick="goToClause(' + i + ')"></button>';
+  }).join("");
 
   return `<div class="heatmap">
     <div class="heatmap-strip">${cells}</div>
@@ -1454,7 +1456,7 @@ function renderDocument(clauses, jumpToClause, quality) {
           <div class="comment" data-comment-id="${cm.comment_id}">
             <span class="comment-author">${esc(cm.author || "anonymous")}</span>
             <span class="comment-text">${esc(cm.text)}</span>
-            <button class="comment-delete" data-comment-id="${cm.comment_id}" title="Delete comment">&times;</button>
+            <button class="comment-delete" data-comment-id="${cm.comment_id}" title="Delete comment" aria-label="Delete comment">&times;</button>
           </div>`).join("")}
         <div class="comment-add">
           <input type="text" class="comment-input" data-clause-index="${c.index}" placeholder="Add a comment on this clause…" />
