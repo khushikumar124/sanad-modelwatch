@@ -46,6 +46,16 @@
   }
   button, input, select, textarea { font: inherit; color: inherit; }
   ::selection { background: var(--accent-wash); }
+  /* Keyboard-only focus ring, app-wide -- most interactive elements
+     here (.tab, .btn, .linkish, .doc-item, and any button added since)
+     had no visible focus state at all, a real gap for anyone tabbing
+     through rather than clicking. :focus-visible keeps mouse clicks
+     exactly as they looked before -- only keyboard/programmatic focus
+     gets the ring. */
+  a:focus-visible, button:focus-visible, input:focus-visible,
+  select:focus-visible, textarea:focus-visible, [tabindex]:focus-visible {
+    outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 3px;
+  }
 
   /* ---------- motion ----------
      A small, shared vocabulary of entrance animations, used deliberately
