@@ -55,7 +55,7 @@
   button, input, select, textarea { font: inherit; color: inherit; }
   ::selection { background: var(--accent-wash); }
   /* Keyboard-only focus ring, app-wide -- most interactive elements
-     here (.tab, .btn, .linkish, .doc-item, and any button added since)
+     here (.nav-item, .btn, .linkish, .doc-item, and any button added since)
      had no visible focus state at all, a real gap for anyone tabbing
      through rather than clicking. :focus-visible keeps mouse clicks
      exactly as they looked before -- only keyboard/programmatic focus
@@ -159,8 +159,12 @@
 
   /* ---------- main ---------- */
   .main { flex: 1; min-width: 0; display: flex; flex-direction: column; overflow: hidden; }
+  #workspace { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 
-  .dochead { padding: 18px 26px 0; flex: none; }
+  .dochead {
+    padding: 18px 26px 16px; flex: none; border-bottom: 1px solid var(--line);
+    display: flex; align-items: flex-start; justify-content: space-between; gap: 14px;
+  }
   .dochead h1 {
     font-family: var(--serif); font-size: 25px; margin: 0 0 6px; overflow-wrap: anywhere;
   }
@@ -173,39 +177,47 @@
   .pill.warn { background: var(--medium-wash); color: var(--medium); border-color: transparent; }
   .pill.accent { background: var(--accent-wash); color: var(--accent-ink); border-color: transparent; }
 
-  .tabs {
-    display: flex; gap: 2px; padding: 16px 26px 0; border-bottom: 1px solid var(--line);
-    flex: none; align-items: center;
-    /* Nine tabs don't fit every viewport -- scroll rather than silently
-       clip tabs off the right edge (the old flex-with-no-overflow
-       behaviour), with a thin scrollbar as the only visual hint. */
-    overflow-x: auto; scrollbar-width: thin;
+  /* ---------- section nav (grouped, sidebar-style) ----------
+     A vertical, grouped nav -- Orientation / Ask / Multi-document /
+     Source -- next to the pane content, the same "grouped sidebar"
+     pattern ModelWatch's dashboard already uses, rather than the flat
+     horizontal tab strip this replaces. At narrow widths it collapses
+     to the old horizontal scrollable strip instead (see the mobile
+     media query below) since there's no room for a second sidebar
+     alongside the document list there. */
+  .workspace-body { flex: 1; min-height: 0; display: flex; }
+  .section-nav {
+    flex: none; width: 190px; overflow-y: auto; overflow-x: hidden;
+    padding: 14px 10px 20px; border-right: 1px solid var(--line);
+    display: flex; flex-direction: column; gap: 2px;
   }
-  .tab-sep {
-    flex: none; width: 1px; align-self: stretch; margin: 8px 6px; background: var(--line);
+  /* display:contents un-nests the group wrapper so its label + buttons
+     become direct flex children of .section-nav -- the same markup
+     then also works for the mobile horizontal-row fallback below,
+     where the group boundary is a separator element instead. */
+  .nav-group { display: contents; }
+  .nav-group-label {
+    font-size: 10.5px; text-transform: uppercase; letter-spacing: .08em;
+    font-weight: 600; color: var(--muted); padding: 12px 10px 4px;
   }
-  .tab {
+  .nav-sep { display: none; }
+  .nav-item {
     background: none; border: none; cursor: pointer; position: relative;
-    flex: none;
-    padding: 9px 15px 12px; font-size: 13.5px; font-weight: 550; color: var(--muted);
-    border-radius: var(--r-sm) var(--r-sm) 0 0;
+    text-align: left; display: flex; align-items: center; gap: 6px;
+    padding: 8px 10px; font-size: 13.5px; font-weight: 550; color: var(--muted);
+    border-radius: var(--r-sm);
     transition: color .15s ease, background .15s ease;
   }
-  .tab:hover { color: var(--ink); background: var(--surface-2); }
-  .tab.active { color: var(--accent-ink); }
-  .tab::after {
-    content: ""; position: absolute; left: 12px; right: 12px; bottom: -1px;
-    height: 2px; background: var(--accent); border-radius: 2px;
-    opacity: 0; transform: scaleX(.6); transition: opacity .18s ease, transform .18s ease;
-  }
-  .tab.active::after { opacity: 1; transform: scaleX(1); }
-  .tab .count {
-    display: inline-block; margin-left: 6px; font-size: 10.5px; font-weight: 700;
+  .nav-item:hover { color: var(--ink); background: var(--surface-2); }
+  .nav-item.active { color: var(--accent-ink); background: var(--accent-wash); }
+  .nav-item .count {
+    display: inline-block; margin-left: auto; font-size: 10.5px; font-weight: 700;
     padding: 1px 6px; border-radius: 999px; background: var(--line-soft); color: var(--ink-soft);
   }
-  .tab .count:empty { display: none; }
-  .tab .count.hot { background: var(--high-wash); color: var(--high); }
+  .nav-item .count:empty { display: none; }
+  .nav-item .count.hot { background: var(--high-wash); color: var(--high); }
 
+  .pane-stack { flex: 1; min-width: 0; display: flex; flex-direction: column; }
   .pane { flex: 1; overflow-y: auto; padding: 22px 26px 40px; }
   .pane[hidden] { display: none; }
   .pane.pane-fade { animation: fadeInUp .22s ease; }
@@ -517,7 +529,21 @@
 
   @media (max-width: 860px) {
     .sidebar { display: none; }
-    .pane, .dochead, .tabs { padding-left: 16px; padding-right: 16px; }
+    .pane, .dochead { padding-left: 16px; padding-right: 16px; }
+    /* No room for a second (section) sidebar alongside the document
+       list at this width -- collapse .section-nav from a vertical
+       grouped list to the old horizontal scrollable strip instead. */
+    .workspace-body { flex-direction: column; }
+    .section-nav {
+      flex-direction: row; align-items: center; width: auto; height: auto;
+      border-right: none; border-bottom: 1px solid var(--line);
+      overflow-x: auto; overflow-y: hidden; padding: 10px 16px 0;
+      scrollbar-width: thin;
+    }
+    .nav-group-label { display: none; }
+    .nav-item { flex: none; white-space: nowrap; border-radius: var(--r-sm) var(--r-sm) 0 0; }
+    .nav-item .count { margin-left: 6px; }
+    .nav-sep { display: block; flex: none; width: 1px; align-self: stretch; margin: 8px 6px; background: var(--line); }
   }
 
   /* ---------- learn panel ---------- */
@@ -658,74 +684,92 @@
 
       <div id="workspace" hidden>
         <div class="dochead">
-          <h1 id="docTitle"></h1>
-          <div class="meta" id="docMeta"></div>
-        </div>
-        <div class="tabs">
-          <button class="tab" data-pane="overview">Overview</button>
-          <button class="tab active" data-pane="risks">Risk scan <span class="count" id="tabRiskCount"></span></button>
-          <button class="tab" data-pane="review">Review</button>
-          <span class="tab-sep"></span>
-          <button class="tab" data-pane="summary">Summary</button>
-          <button class="tab" data-pane="ask">Ask</button>
-          <button class="tab" data-pane="scenario">Scenario</button>
-          <span class="tab-sep"></span>
-          <button class="tab" data-pane="compare">Compare</button>
-          <button class="tab" data-pane="versions">Versions</button>
-          <span class="tab-sep"></span>
-          <button class="tab" data-pane="document">Document</button>
-          <span style="flex:1"></span>
+          <div>
+            <h1 id="docTitle"></h1>
+            <div class="meta" id="docMeta"></div>
+          </div>
           <button class="linkish" id="deleteBtn" title="Remove this document">Remove</button>
         </div>
 
-        <div class="pane" id="pane-risks"><div class="wrap" id="risksBody"></div></div>
-        <div class="pane" id="pane-overview" hidden><div class="wrap" id="overviewBody"></div></div>
-        <div class="pane" id="pane-summary" hidden><div class="wrap" id="summaryBody"></div></div>
-        <div class="pane" id="pane-ask" hidden>
-          <div class="wrap">
-            <div class="suggest" id="suggest"></div>
-            <div class="chat-scroll" id="chatLog"></div>
-            <div class="composer">
-              <input type="text" id="chatInput" placeholder="Ask about a specific term…" />
-              <button class="btn" id="askBtn">Ask</button>
+        <div class="workspace-body">
+          <nav class="section-nav" id="sectionNav">
+            <div class="nav-group">
+              <div class="nav-group-label">Orientation</div>
+              <button class="nav-item" data-pane="overview">Overview</button>
+              <button class="nav-item active" data-pane="risks">Risk scan <span class="count" id="tabRiskCount"></span></button>
+              <button class="nav-item" data-pane="review">Review</button>
             </div>
-          </div>
-        </div>
-        <div class="pane" id="pane-scenario" hidden>
-          <div class="wrap">
-            <p class="fineprint" style="margin-bottom:12px;max-width:520px;">Describe a hypothetical situation in your own words -- it doesn't need to match the contract's wording. This traces which clause(s) actually govern it, the same way the Ask tab does, but with analysis tuned for "what if" questions rather than direct lookups.</p>
-            <div style="display:flex;gap:10px;">
-              <input type="text" id="scenarioInput" placeholder="e.g. What happens if I want to leave before the lease ends?" style="flex:1;" />
-              <button class="btn" id="scenarioBtn">Analyze</button>
+            <span class="nav-sep"></span>
+            <div class="nav-group">
+              <div class="nav-group-label">Ask</div>
+              <button class="nav-item" data-pane="summary">Summary</button>
+              <button class="nav-item" data-pane="ask">Ask</button>
+              <button class="nav-item" data-pane="scenario">Scenario</button>
             </div>
-            <div id="scenarioResult"></div>
-          </div>
-        </div>
-        <div class="pane" id="pane-compare" hidden>
-          <div class="wrap">
-            <div style="display:flex;gap:10px;align-items:center;margin-bottom:14px;">
-              <span class="fineprint">Compare against</span>
-              <select id="compareSelect"></select>
+            <span class="nav-sep"></span>
+            <div class="nav-group">
+              <div class="nav-group-label">Multi-document</div>
+              <button class="nav-item" data-pane="compare">Compare</button>
+              <button class="nav-item" data-pane="versions">Versions</button>
             </div>
-            <div id="compareBody"></div>
-            <div id="crossChatSection" style="margin-top:24px;border-top:1px solid var(--line);padding-top:16px;">
-              <h4 style="margin:0 0 10px;font-size:13px;color:var(--ink-2);">Ask across both documents</h4>
-              <div style="display:flex;gap:10px;">
-                <input id="crossChatInput" type="text" placeholder="e.g. does the notice period match?" style="flex:1;" />
-                <button class="btn" id="crossChatBtn">Ask</button>
+            <span class="nav-sep"></span>
+            <div class="nav-group">
+              <div class="nav-group-label">Source</div>
+              <button class="nav-item" data-pane="document">Document</button>
+            </div>
+          </nav>
+
+          <div class="pane-stack">
+            <div class="pane" id="pane-risks"><div class="wrap" id="risksBody"></div></div>
+            <div class="pane" id="pane-overview" hidden><div class="wrap" id="overviewBody"></div></div>
+            <div class="pane" id="pane-summary" hidden><div class="wrap" id="summaryBody"></div></div>
+            <div class="pane" id="pane-ask" hidden>
+              <div class="wrap">
+                <div class="suggest" id="suggest"></div>
+                <div class="chat-scroll" id="chatLog"></div>
+                <div class="composer">
+                  <input type="text" id="chatInput" placeholder="Ask about a specific term…" />
+                  <button class="btn" id="askBtn">Ask</button>
+                </div>
               </div>
-              <div id="crossChatResult"></div>
             </div>
+            <div class="pane" id="pane-scenario" hidden>
+              <div class="wrap">
+                <p class="fineprint" style="margin-bottom:12px;max-width:520px;">Describe a hypothetical situation in your own words -- it doesn't need to match the contract's wording. This traces which clause(s) actually govern it, the same way the Ask tab does, but with analysis tuned for "what if" questions rather than direct lookups.</p>
+                <div style="display:flex;gap:10px;">
+                  <input type="text" id="scenarioInput" placeholder="e.g. What happens if I want to leave before the lease ends?" style="flex:1;" />
+                  <button class="btn" id="scenarioBtn">Analyze</button>
+                </div>
+                <div id="scenarioResult"></div>
+              </div>
+            </div>
+            <div class="pane" id="pane-compare" hidden>
+              <div class="wrap">
+                <div style="display:flex;gap:10px;align-items:center;margin-bottom:14px;">
+                  <span class="fineprint">Compare against</span>
+                  <select id="compareSelect"></select>
+                </div>
+                <div id="compareBody"></div>
+                <div id="crossChatSection" style="margin-top:24px;border-top:1px solid var(--line);padding-top:16px;">
+                  <h4 style="margin:0 0 10px;font-size:13px;color:var(--ink-2);">Ask across both documents</h4>
+                  <div style="display:flex;gap:10px;">
+                    <input id="crossChatInput" type="text" placeholder="e.g. does the notice period match?" style="flex:1;" />
+                    <button class="btn" id="crossChatBtn">Ask</button>
+                  </div>
+                  <div id="crossChatResult"></div>
+                </div>
+              </div>
+            </div>
+            <div class="pane" id="pane-versions" hidden>
+              <div class="wrap">
+                <div id="versionsBody"></div>
+                <input type="file" id="versionFileInput" accept=".pdf,.png,.jpg,.jpeg,.tiff,.tif,.bmp" hidden />
+              </div>
+            </div>
+            <div class="pane" id="pane-review" hidden><div class="wrap" id="reviewBody"></div></div>
+            <div class="pane" id="pane-document" hidden><div class="wrap" id="documentBody"></div></div>
           </div>
         </div>
-        <div class="pane" id="pane-versions" hidden>
-          <div class="wrap">
-            <div id="versionsBody"></div>
-            <input type="file" id="versionFileInput" accept=".pdf,.png,.jpg,.jpeg,.tiff,.tif,.bmp" hidden />
-          </div>
-        </div>
-        <div class="pane" id="pane-review" hidden><div class="wrap" id="reviewBody"></div></div>
-        <div class="pane" id="pane-document" hidden><div class="wrap" id="documentBody"></div></div>
       </div>
     </main>
   </div>
@@ -915,7 +959,7 @@ async function upload(file) {
 
 /* ---------------- tabs ---------------- */
 function showTab(name, jumpToClause) {
-  document.querySelectorAll(".tab").forEach(t => t.classList.toggle("active", t.dataset.pane === name));
+  document.querySelectorAll(".nav-item").forEach(t => t.classList.toggle("active", t.dataset.pane === name));
   ["risks", "overview", "summary", "ask", "scenario", "compare", "versions", "review", "document"].forEach(p => {
     document.getElementById("pane-" + p).hidden = p !== name;
   });
@@ -1721,7 +1765,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   }));
   dz.addEventListener("drop", e => upload(e.dataTransfer.files[0]));
 
-  document.querySelectorAll(".tab").forEach(t => t.onclick = () => showTab(t.dataset.pane));
+  document.querySelectorAll(".nav-item").forEach(t => t.onclick = () => showTab(t.dataset.pane));
 
   document.getElementById("askBtn").onclick = ask;
   document.getElementById("chatInput").addEventListener("keydown", e => { if (e.key === "Enter") ask(); });
