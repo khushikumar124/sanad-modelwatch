@@ -42,6 +42,17 @@
     -webkit-font-smoothing: antialiased;
   }
   button, select, input { font: inherit; color: inherit; }
+  /* Keyboard-only focus ring, app-wide -- nav-item, button, and link
+     elements had no visible focus state at all before this (same gap
+     fixed in Sanad's frontend/index.html this session). :focus-visible
+     leaves mouse-click appearance untouched. */
+  a:focus-visible, button:focus-visible, input:focus-visible,
+  select:focus-visible, textarea:focus-visible, [tabindex]:focus-visible {
+    outline: 2px solid var(--teal); outline-offset: 2px; border-radius: 3px;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; }
+  }
 
   /* ---------- top bar ---------- */
   header {
