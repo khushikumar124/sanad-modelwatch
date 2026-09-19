@@ -37,24 +37,53 @@ Point at `modelwatch/tests/test_classifier_adapter.py`: the drift tests use
 data generated from a *known* distribution, so whether drift should fire is
 known before the test runs. Not "it didn't crash".
 
-## 2. Sanad: upload → summarise → ask (5 min)
+## 2. Sanad: upload → orient → flag risk → ask (8 min)
 
-At `http://localhost:8100/`:
+At `http://localhost:8100/`, sign in with `demo` / `demopass123` if prompted.
 
 1. Upload `sanad/sample_docs/rental/rental_agreement_sample_1.pdf`, type
    "Rental". Note the badges: **18 chunks indexed**, **native text**.
    Mention the OCR fallback exists for scanned pages and is tested.
-2. **Generate Summary** — ~30 s. Structured fields, not a paragraph blob:
-   parties, obligations, dates, notice period, penalties, termination.
-3. Ask a question from the verified list below.
-4. Ask something the document does *not* cover, e.g.
-   *"What is the visitor parking policy?"* → it refuses instead of inventing.
-   Then open the sources disclosure on a grounded answer to show the clause
-   it used.
+2. **Risk scan tab (opens by default) — lead with this, not Summary.**
+   Point at the donut + stat tiles first: real per-clause severity counts,
+   not a fabricated "safety score" (the ring is built from the exact same
+   data the heatmap below it uses — one shared computation, two views).
+   Click a heatmap cell or a risk card's "View in document →" to show
+   click-to-source jumping straight to the flagged clause.
+3. **Overview tab** — 15 key fields (parties, dates, payment, termination,
+   etc.), each `found`/`not_found`/`unclear`/`insufficient_evidence`, plus
+   the Knowledge Map (hub-and-spoke SVG built from the same grounded data,
+   nothing new inferred). This is a real LLM job — **pre-warm it before
+   presenting** (see "Before you present," below) since it can take over
+   a minute on a local CPU-only model.
+4. **Summary tab** — Generate Summary, ~30s–2min depending on load.
+   Structured fields, not a paragraph blob: parties, obligations, dates,
+   notice period, penalties, termination.
+5. **Ask tab** — ask a question from the verified list below. Point out
+   the "Asking about *filename*" context chip, then ask something the
+   document does *not* cover, e.g. *"What is the visitor parking policy?"*
+   → it refuses instead of inventing. Open the citation disclosure and the
+   "AI / RAG trace" on a grounded answer to show the retrieved clause and
+   per-sentence claim verification.
+6. **Review tab** — obligations, coverage gaps, and contradictions
+   synthesized into one report with suggested negotiation questions. Also
+   a real LLM job — pre-warm it too.
+7. If you uploaded a second document earlier, show **Compare** (semantic-
+   impact diff of the two risk profiles) and **Versions** (upload a
+   revised copy of the same contract, jump straight into Compare against
+   a specific prior version).
 
 The refusal is the point worth dwelling on. An answer with no valid citation
 is downgraded to a refusal in `features/chatbot.py` — the system fails
 toward "I don't know" rather than toward confident invention.
+
+**Before you present:** Overview, Summary, and Review each trigger a real
+local LLM call and cache their result *in the browser tab* only (no
+server-side cache, and it resets on page reload). Click through all three
+tabs for your demo document(s) once, right before you go on, so they're
+already rendered when you get there live — and never trigger two of these
+jobs at once (a local model serves one request at a time; a second job
+queued behind the first can hit Ollama's 180s timeout).
 
 ## 3. ModelWatch dashboard (3 min)
 
