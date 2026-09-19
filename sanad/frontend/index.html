@@ -6,73 +6,68 @@
 <title>Sanad — contract workspace</title>
 <style>
   /* ------------------------------------------------------------------
-     Design language: a quiet reading desk. Warm paper ground, ink-dark
-     text, one terracotta accent. Contracts are stressful documents, so
-     the interface stays calm and lets severity colour be the only thing
-     that raises its voice.
+     Design language: a calm, premium reading desk. Warm paper ground,
+     ink-dark text, one terracotta accent used deliberately rather than
+     everywhere. Contracts are stressful documents, so the interface
+     stays quiet and lets severity colour be the only thing that raises
+     its voice. Surfaces lean toward clean white (vs. the previous all-
+     beige wash) for a crisper, more "product" feel, while every text/
+     background pairing below keeps the exact luminance relationship
+     that was measured for WCAG AA in an earlier pass -- only lightened,
+     never darkened, so contrast can only improve.
      ------------------------------------------------------------------ */
   :root {
-    --paper:      #f6f2ea;
-    --surface:    #fffdf8;
-    --surface-2:  #faf6ee;
-    --ink:        #221f1a;
-    --ink-soft:   #554f45;
-    /* WCAG AA needs >=4.5:1 for normal-size text against --paper; the
-       original #857c6d measured ~3.78:1 (fails) -- darkened to hit
-       ~4.6:1 while staying in the same warm grey-brown family, since
-       this is used everywhere for secondary/caption text at normal
-       size, not just large-text UI chrome (which only needs 3:1). */
-    --muted:      #756c5d;
-    --line:       #e4dccc;
-    --line-soft:  #efe8db;
+    --paper:      #f8f6f1;
+    --surface:    #ffffff;
+    --surface-2:  #f7f4ee;
+    --ink:        #1c1912;
+    --ink-soft:   #4a4438;
+    /* WCAG AA needs >=4.5:1 for normal-size text; kept at the exact
+       measured-passing value from the last contrast audit. */
+    --muted:      #726a5c;
+    --line:       #e6dfd0;
+    --line-soft:  #efe9db;
     --accent:     #a85c1a;
     --accent-ink: #7d4413;
-    --accent-wash:#f4e6d5;
+    --accent-wash:#f6e8d8;
 
     --high:       #a53d2c;  --high-wash:   #f7e5e1;
-    /* --medium against --medium-wash measured ~3.98:1 (fails 4.5:1 AA
-       for normal text -- checked all four severity colors, only this
-       one failed). Darkened slightly; --high/--low/--good already pass. */
     --medium:     #83621a;  --medium-wash: #f8eed6;
     --low:        #4d6b78;  --low-wash:    #e8eef1;
     --good:       #3d6b52;  --good-wash:   #e4efe8;
 
-    --r-sm: 6px; --r: 10px; --r-lg: 16px;
-    --shadow-sm: 0 1px 2px rgba(50,40,25,.05);
-    --shadow:    0 2px 10px rgba(50,40,25,.07);
-    --shadow-lg: 0 12px 40px rgba(50,40,25,.14);
+    --r-sm: 8px; --r: 13px; --r-lg: 20px;
+    --shadow-sm: 0 1px 2px rgba(40,32,20,.05), 0 1px 1px rgba(40,32,20,.04);
+    --shadow:    0 4px 16px rgba(40,32,20,.07), 0 1px 3px rgba(40,32,20,.05);
+    --shadow-lg: 0 20px 50px rgba(40,32,20,.16), 0 4px 14px rgba(40,32,20,.08);
+
+    --sp-1: 4px; --sp-2: 8px; --sp-3: 12px; --sp-4: 16px;
+    --sp-5: 20px; --sp-6: 24px; --sp-7: 32px; --sp-8: 44px;
 
     --serif: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
-    --sans:  -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, sans-serif;
+    --sans:  "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   }
   * { box-sizing: border-box; }
   html, body { height: 100%; }
   body {
     margin: 0; background: var(--paper); color: var(--ink);
     font-family: var(--sans); font-size: 14px; line-height: 1.55;
-    -webkit-font-smoothing: antialiased;
+    -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale;
+    letter-spacing: -0.006em;
   }
   button, input, select, textarea { font: inherit; color: inherit; }
   ::selection { background: var(--accent-wash); }
-  /* Keyboard-only focus ring, app-wide -- most interactive elements
-     here (.nav-item, .btn, .linkish, .doc-item, and any button added since)
-     had no visible focus state at all, a real gap for anyone tabbing
-     through rather than clicking. :focus-visible keeps mouse clicks
-     exactly as they looked before -- only keyboard/programmatic focus
-     gets the ring. */
+  /* Keyboard-only focus ring, app-wide. */
   a:focus-visible, button:focus-visible, input:focus-visible,
   select:focus-visible, textarea:focus-visible, [tabindex]:focus-visible {
-    outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 3px;
+    outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px;
   }
 
-  /* ---------- motion ----------
-     A small, shared vocabulary of entrance animations, used deliberately
-     (new content appearing, a tab becoming active, a modal opening) --
-     never on hover-repeatable or poll-refreshed content, so nothing
-     "jumps" on every click or re-render. Respects reduced-motion. */
+  /* ---------- motion ---------- */
   @keyframes fadeInUp { from { opacity: 0; transform: translateY(7px); } to { opacity: 1; transform: none; } }
   @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
   @keyframes popIn { from { opacity: 0; transform: scale(.96); } to { opacity: 1; transform: none; } }
+  @keyframes ringDraw { from { stroke-dashoffset: var(--circ); } to { stroke-dashoffset: var(--offset); } }
   @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; }
   }
@@ -81,26 +76,38 @@
   .app { display: flex; flex-direction: column; height: 100vh; animation: fadeIn .35s ease; }
 
   .topbar {
-    display: flex; align-items: center; gap: 10px;
-    padding: 0 18px; height: 58px; flex: none;
+    display: flex; align-items: center; gap: 14px;
+    padding: 0 22px; height: 60px; flex: none;
     background: var(--surface); border-bottom: 1px solid var(--line);
   }
-  .brand { display: flex; align-items: baseline; gap: 9px; }
-  .brand .mark {
-    font-family: var(--serif); font-size: 22px; color: var(--accent);
+  .brand { display: flex; align-items: center; gap: 10px; }
+  .brand .glyphmark {
+    width: 28px; height: 28px; border-radius: 8px; flex: none;
+    background: linear-gradient(155deg, var(--accent), var(--accent-ink));
+    display: flex; align-items: center; justify-content: center;
+    color: #fff; font-family: var(--serif); font-size: 16px; font-weight: 600;
+    box-shadow: 0 2px 6px rgba(125,68,19,.35);
   }
-  .brand .tag { font-size: 11.5px; color: var(--muted); }
+  .brand .word { display: flex; flex-direction: column; line-height: 1.15; }
+  .brand .mark {
+    font-family: var(--serif); font-size: 18px; font-weight: 600; color: var(--ink);
+  }
+  .brand .tag { font-size: 11px; color: var(--muted); letter-spacing: .01em; }
   .topbar .spacer { flex: 1; }
+  .topbar .divider { width: 1px; align-self: stretch; margin: 14px 2px; background: var(--line); }
   .chip-quiet {
     display: inline-flex; align-items: center; gap: 6px;
-    font-size: 11.5px; color: var(--muted);
-    border: 1px solid var(--line); border-radius: 999px; padding: 4px 11px;
+    font-size: 11.5px; color: var(--muted); font-weight: 500;
+    border: 1px solid var(--line); border-radius: 999px; padding: 5px 12px;
     background: var(--surface-2); white-space: nowrap;
   }
-  .chip-quiet .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--good); }
+  .chip-quiet .dot {
+    width: 6px; height: 6px; border-radius: 50%; background: var(--good);
+    box-shadow: 0 0 0 3px var(--good-wash);
+  }
   .linkish {
     background: none; border: none; color: var(--muted); cursor: pointer;
-    font-size: 12px; padding: 5px 9px; border-radius: var(--r-sm);
+    font-size: 12.5px; font-weight: 500; padding: 6px 10px; border-radius: var(--r-sm);
     transition: background .12s ease, color .12s ease;
   }
   .linkish:hover { background: var(--surface-2); color: var(--ink); }
@@ -109,52 +116,72 @@
 
   /* ---------- sidebar ---------- */
   .sidebar {
-    width: 274px; flex: none; display: flex; flex-direction: column;
+    width: 292px; flex: none; display: flex; flex-direction: column;
     background: var(--surface-2); border-right: 1px solid var(--line);
   }
   .sidebar-head {
-    padding: 16px 16px 10px; display: flex; align-items: center; justify-content: space-between;
+    padding: 18px 16px 12px; display: flex; align-items: center; justify-content: space-between;
   }
   .sidebar-head h2 {
-    margin: 0; font-size: 11px; text-transform: uppercase; letter-spacing: .1em;
-    color: var(--muted); font-weight: 600;
+    margin: 0; font-size: 11px; text-transform: uppercase; letter-spacing: .09em;
+    color: var(--muted); font-weight: 700;
   }
-  .doclist { flex: 1; overflow-y: auto; padding: 0 10px 10px; }
-  .doclist .none { color: var(--muted); font-size: 12.5px; padding: 8px 11px; font-style: italic; }
+  .sidebar-search { padding: 0 16px 10px; }
+  .sidebar-search input {
+    width: 100%; background: var(--surface); border: 1px solid var(--line);
+    border-radius: var(--r-sm); padding: 8px 11px 8px 30px; font-size: 12.5px; outline: none;
+    transition: border-color .12s ease, box-shadow .12s ease;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 16 16' fill='none' stroke='%23726a5c' stroke-width='1.4'%3E%3Ccircle cx='7' cy='7' r='4.6'/%3E%3Cpath d='M10.4 10.4 L14 14' stroke-linecap='round'/%3E%3C/svg%3E");
+    background-repeat: no-repeat; background-position: 10px center;
+  }
+  .sidebar-search input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-wash); }
+  .doclist { flex: 1; overflow-y: auto; padding: 2px 10px 10px; }
+  .doclist .none { color: var(--muted); font-size: 12.5px; padding: 10px 11px; font-style: italic; }
   .doc-item {
     width: 100%; text-align: left; background: transparent; border: 1px solid transparent;
-    border-radius: var(--r); padding: 10px 11px; margin-bottom: 3px; cursor: pointer;
-    transition: background .12s ease, border-color .12s ease, transform .12s ease;
+    border-left: 3px solid transparent;
+    border-radius: var(--r-sm); padding: 10px 11px 10px 10px; margin-bottom: 3px; cursor: pointer;
+    transition: background .12s ease, border-color .12s ease;
+    display: flex; align-items: flex-start; gap: 9px;
   }
-  .doc-item:hover { background: var(--surface); border-color: var(--line-soft); transform: translateX(2px); }
+  .doc-item .filetype {
+    flex: none; width: 26px; height: 26px; border-radius: 7px; margin-top: 1px;
+    background: var(--surface); border: 1px solid var(--line-soft);
+    display: flex; align-items: center; justify-content: center; color: var(--muted);
+  }
+  .doc-item .doc-copy { min-width: 0; flex: 1; }
+  .doc-item:hover { background: var(--surface); border-color: var(--line-soft); }
   .doc-item.active {
-    background: var(--surface); border-color: var(--line); box-shadow: var(--shadow-sm);
+    background: var(--surface); border-color: var(--line-soft); border-left-color: var(--accent);
+    box-shadow: var(--shadow-sm);
   }
+  .doc-item.active .filetype { color: var(--accent); border-color: var(--accent-wash); background: var(--accent-wash); }
   .doc-item .name {
-    font-size: 13px; font-weight: 550;
+    font-size: 13px; font-weight: 600;
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
   .doc-item .sub {
-    font-size: 11.5px; color: var(--muted); margin-top: 2px;
-    display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+    font-size: 11.5px; color: var(--muted); margin-top: 3px;
+    display: flex; align-items: center; gap: 7px; flex-wrap: wrap;
   }
-  .risk-dot { display: inline-flex; align-items: center; gap: 3px; font-weight: 600; }
+  .risk-dot { display: inline-flex; align-items: center; gap: 4px; font-weight: 600; }
   .risk-dot i { width: 6px; height: 6px; border-radius: 50%; display: inline-block; }
   .risk-dot.high  { color: var(--high); }  .risk-dot.high i  { background: var(--high); }
   .risk-dot.clear { color: var(--good); }  .risk-dot.clear i { background: var(--good); }
 
-  .sidebar-foot { padding: 10px; border-top: 1px solid var(--line); }
+  .sidebar-foot { padding: 12px; border-top: 1px solid var(--line); }
   .btn {
     display: inline-flex; align-items: center; justify-content: center; gap: 7px;
     background: var(--accent); color: #fff; border: none; cursor: pointer;
-    border-radius: var(--r-sm); padding: 9px 15px; font-size: 13px; font-weight: 600;
+    border-radius: var(--r-sm); padding: 10px 16px; font-size: 13px; font-weight: 600;
     transition: background .12s ease, transform .12s ease, box-shadow .12s ease;
+    letter-spacing: -0.005em;
   }
   .btn:hover { background: var(--accent-ink); transform: translateY(-1px); box-shadow: var(--shadow-sm); }
   .btn:active { transform: translateY(1px); box-shadow: none; }
   .btn:disabled { opacity: .5; cursor: not-allowed; transform: none; box-shadow: none; }
-  .btn.ghost { background: var(--surface); color: var(--accent); border: 1px solid var(--line); }
-  .btn.ghost:hover { background: var(--accent-wash); }
+  .btn.ghost { background: var(--surface); color: var(--accent-ink); border: 1px solid var(--line); }
+  .btn.ghost:hover { background: var(--accent-wash); border-color: var(--accent-wash); }
   .btn.wide { width: 100%; }
 
   /* ---------- main ---------- */
@@ -162,54 +189,50 @@
   #workspace { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 
   .dochead {
-    padding: 18px 26px 16px; flex: none; border-bottom: 1px solid var(--line);
+    padding: 22px 30px 18px; flex: none; border-bottom: 1px solid var(--line);
     display: flex; align-items: flex-start; justify-content: space-between; gap: 14px;
+    background: var(--surface);
   }
   .dochead h1 {
-    font-family: var(--serif); font-size: 25px; margin: 0 0 6px; overflow-wrap: anywhere;
+    font-family: var(--serif); font-size: 26px; font-weight: 600; margin: 0 0 8px; overflow-wrap: anywhere;
+    letter-spacing: -0.01em;
   }
+  .dochead-actions { display: flex; align-items: center; gap: 4px; flex: none; }
   .meta { display: flex; flex-wrap: wrap; gap: 7px; align-items: center; }
   .pill {
-    font-size: 11px; padding: 3px 10px; border-radius: 999px;
+    font-size: 11px; font-weight: 500; padding: 4px 10px; border-radius: 999px;
     background: var(--surface-2); color: var(--muted); border: 1px solid var(--line-soft);
   }
   .pill.good { background: var(--good-wash); color: var(--good); border-color: transparent; }
   .pill.warn { background: var(--medium-wash); color: var(--medium); border-color: transparent; }
   .pill.accent { background: var(--accent-wash); color: var(--accent-ink); border-color: transparent; }
+  .pill.high { background: var(--high-wash); color: var(--high); border-color: transparent; font-weight: 650; }
 
-  /* ---------- section nav (grouped, sidebar-style) ----------
-     A vertical, grouped nav -- Orientation / Ask / Multi-document /
-     Source -- next to the pane content, the same "grouped sidebar"
-     pattern ModelWatch's dashboard already uses, rather than the flat
-     horizontal tab strip this replaces. At narrow widths it collapses
-     to the old horizontal scrollable strip instead (see the mobile
-     media query below) since there's no room for a second sidebar
-     alongside the document list there. */
+  /* ---------- section nav (grouped, sidebar-style) ---------- */
   .workspace-body { flex: 1; min-height: 0; display: flex; }
   .section-nav {
-    flex: none; width: 190px; overflow-y: auto; overflow-x: hidden;
-    padding: 14px 10px 20px; border-right: 1px solid var(--line);
-    display: flex; flex-direction: column; gap: 2px;
+    flex: none; width: 208px; overflow-y: auto; overflow-x: hidden;
+    padding: 16px 12px 20px; border-right: 1px solid var(--line);
+    display: flex; flex-direction: column; gap: 2px; background: var(--surface);
   }
-  /* display:contents un-nests the group wrapper so its label + buttons
-     become direct flex children of .section-nav -- the same markup
-     then also works for the mobile horizontal-row fallback below,
-     where the group boundary is a separator element instead. */
   .nav-group { display: contents; }
   .nav-group-label {
     font-size: 10.5px; text-transform: uppercase; letter-spacing: .08em;
-    font-weight: 600; color: var(--muted); padding: 12px 10px 4px;
+    font-weight: 700; color: var(--muted); padding: 14px 10px 5px;
   }
   .nav-sep { display: none; }
   .nav-item {
     background: none; border: none; cursor: pointer; position: relative;
-    text-align: left; display: flex; align-items: center; gap: 6px;
-    padding: 8px 10px; font-size: 13.5px; font-weight: 550; color: var(--muted);
+    text-align: left; display: flex; align-items: center; gap: 9px;
+    padding: 9px 10px; font-size: 13.5px; font-weight: 550; color: var(--ink-soft);
     border-radius: var(--r-sm);
     transition: color .15s ease, background .15s ease;
   }
+  .nav-item svg { flex: none; opacity: .75; transition: opacity .15s ease; }
   .nav-item:hover { color: var(--ink); background: var(--surface-2); }
-  .nav-item.active { color: var(--accent-ink); background: var(--accent-wash); }
+  .nav-item.active { color: var(--accent-ink); background: var(--accent-wash); font-weight: 650; }
+  .nav-item.active svg { opacity: 1; }
+  .nav-item .label { flex: 1; }
   .nav-item .count {
     display: inline-block; margin-left: auto; font-size: 10.5px; font-weight: 700;
     padding: 1px 6px; border-radius: 999px; background: var(--line-soft); color: var(--ink-soft);
@@ -217,31 +240,66 @@
   .nav-item .count:empty { display: none; }
   .nav-item .count.hot { background: var(--high-wash); color: var(--high); }
 
-  .pane-stack { flex: 1; min-width: 0; display: flex; flex-direction: column; }
-  .pane { flex: 1; overflow-y: auto; padding: 22px 26px 40px; }
+  .pane-stack { flex: 1; min-width: 0; display: flex; flex-direction: column; background: var(--paper); }
+  .pane { flex: 1; overflow-y: auto; padding: 26px 30px 44px; }
   .pane[hidden] { display: none; }
   .pane.pane-fade { animation: fadeInUp .22s ease; }
-  .wrap { max-width: 780px; }
+  .wrap { max-width: 800px; }
   .none { color: var(--muted); font-style: italic; }
+  .section-h {
+    font-family: var(--serif); font-size: 18px; font-weight: 600; margin: 0 0 10px;
+    letter-spacing: -0.005em;
+  }
 
   /* ---------- empty / dropzone ---------- */
-  .empty-stage { flex: 1; display: flex; align-items: center; justify-content: center; padding: 30px; }
+  .empty-stage { flex: 1; display: flex; align-items: center; justify-content: center; padding: 30px; background: var(--paper); }
   .dropzone {
-    width: 100%; max-width: 560px; text-align: center;
+    width: 100%; max-width: 580px; text-align: center;
     border: 1.5px dashed var(--line); border-radius: var(--r-lg);
-    background: var(--surface); padding: 46px 34px;
-    transition: border-color .15s ease, background .15s ease;
+    background: var(--surface); padding: 52px 38px;
+    transition: border-color .15s ease, background .15s ease, transform .15s ease;
+    box-shadow: var(--shadow-sm);
   }
-  .dropzone.drag { border-color: var(--accent); background: var(--accent-wash); }
-  .dropzone h2 { font-family: var(--serif); font-size: 24px; margin: 0 0 8px; }
-  .dropzone p { color: var(--muted); margin: 0 auto 22px; max-width: 400px; font-size: 13.5px; }
-  .dropzone .glyph { font-size: 34px; line-height: 1; margin-bottom: 14px; opacity: .55; }
+  .dropzone.drag { border-color: var(--accent); background: var(--accent-wash); transform: scale(1.01); }
+  .dropzone h2 { font-family: var(--serif); font-size: 25px; font-weight: 600; margin: 0 0 9px; letter-spacing: -0.01em; }
+  .dropzone p { color: var(--muted); margin: 0 auto 24px; max-width: 400px; font-size: 13.5px; }
+  .dropzone .glyph {
+    width: 56px; height: 56px; margin: 0 auto 18px; border-radius: 16px;
+    background: var(--accent-wash); color: var(--accent-ink);
+    display: flex; align-items: center; justify-content: center;
+  }
   .dz-row { display: flex; gap: 9px; justify-content: center; flex-wrap: wrap; align-items: center; }
   select.type {
     background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-sm);
-    padding: 9px 12px; font-size: 13px;
+    padding: 10px 13px; font-size: 13px;
   }
-  .fineprint { font-size: 11.5px; color: var(--muted); margin-top: 16px; }
+  .fineprint { font-size: 11.5px; color: var(--muted); margin-top: 18px; }
+
+  /* ---------- risk overview (donut + stat tiles) ---------- */
+  .risk-overview {
+    display: flex; align-items: center; gap: 28px; flex-wrap: wrap;
+    background: var(--surface); border: 1px solid var(--line-soft); border-radius: var(--r-lg);
+    padding: 22px 26px; margin-bottom: 20px; box-shadow: var(--shadow-sm);
+    animation: fadeInUp .3s ease;
+  }
+  .donut-wrap { position: relative; flex: none; width: 140px; height: 140px; }
+  .donut-wrap svg circle { transition: stroke-dasharray .5s ease; }
+  .donut-center {
+    position: absolute; inset: 0; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; text-align: center;
+  }
+  .donut-num { font-family: var(--serif); font-size: 26px; font-weight: 600; color: var(--ink); line-height: 1; }
+  .donut-label { font-size: 10.5px; color: var(--muted); margin-top: 4px; line-height: 1.35; }
+  .stat-tiles { display: grid; grid-template-columns: repeat(2, minmax(100px, 1fr)); gap: 10px; flex: 1; min-width: 220px; }
+  .stat-tile {
+    display: flex; align-items: baseline; gap: 7px; padding: 10px 13px;
+    background: var(--surface-2); border-radius: var(--r-sm); border: 1px solid var(--line-soft);
+  }
+  .stat-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; align-self: center; }
+  .stat-dot.high { background: var(--high); } .stat-dot.medium { background: var(--medium); }
+  .stat-dot.low { background: var(--low); } .stat-dot.good { background: var(--good); }
+  .stat-num { font-size: 17px; font-weight: 700; font-family: var(--serif); }
+  .stat-label { font-size: 11.5px; color: var(--muted); }
 
   /* ---------- risk cards ---------- */
   .scanline { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; margin-bottom: 18px; }
@@ -257,8 +315,8 @@
   .risk {
     background: var(--surface); border: 1px solid var(--line-soft);
     border-left: 3px solid var(--line); border-radius: var(--r);
-    padding: 15px 17px; margin-bottom: 11px; box-shadow: var(--shadow-sm);
-    transition: box-shadow .15s ease, transform .15s ease;
+    padding: 16px 18px; margin-bottom: 12px; box-shadow: var(--shadow-sm);
+    transition: box-shadow .15s ease, transform .15s ease, border-color .15s ease;
     animation: fadeInUp .32s ease backwards;
   }
   .risk:hover { box-shadow: var(--shadow); transform: translateY(-1px); }
@@ -271,7 +329,7 @@
   .risk.medium { border-left-color: var(--medium); }
   .risk.low { border-left-color: var(--low); }
   .risk-top { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-  .risk-title { font-size: 15px; font-weight: 620; font-family: var(--serif); }
+  .risk-title { font-size: 15.5px; font-weight: 630; font-family: var(--serif); letter-spacing: -0.005em; }
   .sev-tag {
     font-size: 9.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .07em;
     padding: 2px 7px; border-radius: 3px;
@@ -279,48 +337,59 @@
   .sev-tag.high { background: var(--high-wash); color: var(--high); }
   .sev-tag.medium { background: var(--medium-wash); color: var(--medium); }
   .sev-tag.low { background: var(--low-wash); color: var(--low); }
-  .risk-why { color: var(--ink-soft); margin-top: 7px; font-size: 13.5px; }
-  .risk-who { color: var(--muted); font-size: 12.5px; margin-top: 5px; }
+  .risk-why { color: var(--ink-soft); margin-top: 8px; font-size: 13.5px; }
+  .risk-who { color: var(--muted); font-size: 12.5px; margin-top: 6px; }
+  .risk-quote-label {
+    display: flex; align-items: center; gap: 6px; margin-top: 12px;
+    font-size: 10.5px; text-transform: uppercase; letter-spacing: .07em; font-weight: 700;
+    color: var(--muted);
+  }
   .risk-quote {
-    margin-top: 11px; font-family: var(--serif); font-size: 13px; color: var(--ink-soft);
-    background: var(--surface-2); border-radius: var(--r-sm); padding: 11px 13px;
+    margin-top: 6px; font-family: var(--serif); font-size: 13px; color: var(--ink-soft);
+    background: var(--surface-2); border-radius: var(--r-sm); padding: 12px 14px;
     border-left: 2px solid var(--line);
   }
   .disclaimer {
     margin-top: 18px; font-size: 12px; color: var(--muted); line-height: 1.6;
     background: var(--surface-2); border: 1px solid var(--line-soft);
-    border-radius: var(--r-sm); padding: 12px 14px;
+    border-radius: var(--r-sm); padding: 13px 15px;
   }
 
   /* ---------- review tables ---------- */
   table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
   th {
-    text-align: left; padding: 8px 10px; color: var(--muted); font-weight: 600;
+    text-align: left; padding: 9px 10px; color: var(--muted); font-weight: 700;
     font-size: 10.5px; text-transform: uppercase; letter-spacing: .06em;
     border-bottom: 1px solid var(--line); white-space: nowrap;
   }
-  td { padding: 9px 10px; border-bottom: 1px solid var(--line-soft); vertical-align: top; color: var(--ink-soft); }
+  td { padding: 10px 10px; border-bottom: 1px solid var(--line-soft); vertical-align: top; color: var(--ink-soft); }
   tbody tr:hover { background: var(--surface-2); }
 
   /* ---------- document view (click-to-source target) ---------- */
   .clause {
     background: var(--surface); border: 1px solid var(--line-soft); border-radius: var(--r);
-    padding: 14px 16px; margin-bottom: 10px; transition: box-shadow .3s ease, border-color .3s ease;
+    padding: 16px 18px; margin-bottom: 11px; transition: box-shadow .3s ease, border-color .3s ease;
     scroll-margin-top: 20px;
   }
-  .clause-heading { font-family: var(--serif); font-size: 13.5px; font-weight: 620; color: var(--ink); margin-bottom: 5px; }
-  .clause-text { font-size: 13.5px; color: var(--ink-soft); white-space: pre-wrap; line-height: 1.65; }
+  .clause-heading {
+    font-family: var(--serif); font-size: 14px; font-weight: 630; color: var(--ink); margin-bottom: 7px;
+    padding-bottom: 7px; border-bottom: 1px solid var(--line-soft);
+  }
+  .clause-text {
+    font-size: 14px; color: var(--ink-soft); white-space: pre-wrap; line-height: 1.75;
+    font-family: var(--serif);
+  }
   @keyframes clauseFlash {
     0%, 100% { background: var(--surface); border-color: var(--line-soft); }
     30% { background: var(--accent-wash); border-color: var(--accent); }
   }
   .clause-flash { animation: clauseFlash 2s ease; }
-  .clause-comments { margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--line-soft); }
+  .clause-comments { margin-top: 12px; padding-top: 12px; border-top: 1px dashed var(--line-soft); }
   .comment {
     display: flex; align-items: baseline; gap: 8px; font-size: 12.5px;
-    padding: 6px 0; color: var(--ink-soft);
+    padding: 6px 0; color: var(--ink-soft); font-family: var(--sans);
   }
-  .comment-author { font-weight: 620; color: var(--ink); flex-shrink: 0; }
+  .comment-author { font-weight: 650; color: var(--ink); flex-shrink: 0; }
   .comment-text { flex: 1; }
   .comment-delete {
     background: none; border: none; color: var(--muted); cursor: pointer;
@@ -329,31 +398,33 @@
   .comment-delete:hover { color: var(--accent); }
   .comment-add { margin-top: 6px; }
   .comment-input {
-    width: 100%; font-size: 12.5px; padding: 6px 10px; border: 1px solid var(--line-soft);
-    border-radius: var(--r); background: var(--surface-2); color: var(--ink);
+    width: 100%; font-size: 12.5px; padding: 8px 11px; border: 1px solid var(--line-soft);
+    border-radius: var(--r-sm); background: var(--surface-2); color: var(--ink);
+    transition: border-color .12s ease;
   }
+  .comment-input:focus { border-color: var(--accent); outline: none; }
 
   /* ---------- risk heatmap ---------- */
   .heatmap { margin-bottom: 18px; }
   .heatmap-strip { display: flex; gap: 2px; }
   .heatmap-cell {
-    flex: 1; height: 22px; border-radius: 3px; background: var(--line-soft); cursor: pointer;
+    flex: 1; height: 24px; border-radius: 4px; background: var(--line-soft); cursor: pointer;
     transition: transform .1s ease, opacity .1s ease; min-width: 5px;
     border: none; padding: 0; display: block;
   }
-  .heatmap-cell:hover { transform: scaleY(1.25); opacity: .85; }
+  .heatmap-cell:hover { transform: scaleY(1.3); opacity: .85; }
   .heatmap-cell.high { background: var(--high); }
   .heatmap-cell.medium { background: var(--medium); }
   .heatmap-cell.low { background: var(--low); }
-  .heatmap-legend { display: flex; gap: 14px; margin-top: 7px; font-size: 11px; color: var(--muted); }
+  .heatmap-legend { display: flex; gap: 14px; margin-top: 8px; font-size: 11px; color: var(--muted); flex-wrap: wrap; }
   .heatmap-legend span { display: inline-flex; align-items: center; gap: 5px; }
   .heatmap-legend i { width: 9px; height: 9px; border-radius: 2px; display: inline-block; }
 
   /* ---------- summary ---------- */
-  .sum-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 13px; }
+  .sum-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 14px; }
   .sum-card {
     background: var(--surface); border: 1px solid var(--line-soft); border-radius: var(--r);
-    padding: 15px 17px; box-shadow: var(--shadow-sm);
+    padding: 16px 18px; box-shadow: var(--shadow-sm);
     animation: fadeInUp .32s ease backwards; transition: box-shadow .15s ease, transform .15s ease;
   }
   .sum-card:hover { box-shadow: var(--shadow); transform: translateY(-1px); }
@@ -362,55 +433,61 @@
   .sum-grid > :nth-child(3) { animation-delay: 80ms; }
   .sum-grid > :nth-child(n+4) { animation-delay: 120ms; }
   .sum-card h3 {
-    margin: 0 0 9px; font-size: 10.5px; text-transform: uppercase; letter-spacing: .09em;
-    color: var(--muted); font-weight: 650;
+    margin: 0 0 10px; font-size: 10.5px; text-transform: uppercase; letter-spacing: .09em;
+    color: var(--muted); font-weight: 700;
   }
   .sum-card ul { margin: 0; padding-left: 17px; }
-  .sum-card li { margin-bottom: 6px; color: var(--ink-soft); font-size: 13.5px; }
+  .sum-card li { margin-bottom: 7px; color: var(--ink-soft); font-size: 13.5px; }
   .sum-card li:last-child { margin-bottom: 0; }
-  .sum-card .single { font-family: var(--serif); font-size: 18px; }
+  .sum-card .single { font-family: var(--serif); font-size: 19px; font-weight: 600; }
 
   /* ---------- chat ---------- */
-  .chat-scroll { display: flex; flex-direction: column; gap: 15px; margin-bottom: 18px; }
+  .chat-context {
+    display: none; align-items: center; gap: 7px; margin-bottom: 14px;
+    font-size: 12px; color: var(--muted);
+  }
+  .chat-context.show { display: inline-flex; }
+  .chat-context b { color: var(--ink-soft); font-weight: 600; }
+  .chat-scroll { display: flex; flex-direction: column; gap: 16px; margin-bottom: 18px; }
   @keyframes turnInRight { from { opacity: 0; transform: translate(10px, 6px); } to { opacity: 1; transform: none; } }
   @keyframes turnInLeft { from { opacity: 0; transform: translate(-10px, 6px); } to { opacity: 1; transform: none; } }
   .turn { display: flex; flex-direction: column; max-width: 88%; animation: turnInLeft .25s ease backwards; }
   .turn.you { align-self: flex-end; align-items: flex-end; animation-name: turnInRight; }
-  .bubble { padding: 11px 15px; border-radius: 14px; font-size: 13.8px; }
-  .turn.you .bubble { background: var(--accent); color: #fff; border-bottom-right-radius: 4px; }
+  .bubble { padding: 12px 16px; border-radius: 16px; font-size: 13.8px; line-height: 1.55; }
+  .turn.you .bubble { background: var(--accent); color: #fff; border-bottom-right-radius: 5px; }
   .turn.bot .bubble {
     background: var(--surface); border: 1px solid var(--line-soft);
-    border-bottom-left-radius: 4px; box-shadow: var(--shadow-sm);
+    border-bottom-left-radius: 5px; box-shadow: var(--shadow-sm);
   }
   .turn.bot .bubble.refused {
     background: var(--medium-wash); border-color: transparent; color: #6b5312;
   }
-  .cite { margin-top: 8px; }
+  .cite { margin-top: 9px; }
   .cite summary {
     cursor: pointer; font-size: 12px; color: var(--accent); list-style: none;
-    display: inline-flex; align-items: center; gap: 5px;
+    display: inline-flex; align-items: center; gap: 5px; font-weight: 500;
   }
   .cite summary::-webkit-details-marker { display: none; }
-  .cite-body { margin-top: 7px; border-left: 2px solid var(--accent-wash); padding: 3px 0 3px 12px; }
+  .cite-body { margin-top: 8px; border-left: 2px solid var(--accent-wash); padding: 3px 0 3px 12px; }
   .cite-head { font-size: 11.5px; font-weight: 650; color: var(--ink-soft); }
   .cite-text { font-family: var(--serif); font-size: 12.5px; color: var(--muted); margin-top: 3px; }
 
   /* ---------- AI / RAG trace ---------- */
-  .trace { margin-top: 8px; }
+  .trace { margin-top: 9px; }
   .trace summary {
     cursor: pointer; font-size: 12px; color: var(--muted); list-style: none;
-    display: inline-flex; align-items: center; gap: 5px;
+    display: inline-flex; align-items: center; gap: 5px; font-weight: 500;
   }
   .trace summary::-webkit-details-marker { display: none; }
   .trace-body {
-    margin-top: 9px; border: 1px solid var(--line-soft); border-radius: var(--r-sm);
-    padding: 12px 13px; background: var(--surface-2);
+    margin-top: 10px; border: 1px solid var(--line-soft); border-radius: var(--r-sm);
+    padding: 13px 14px; background: var(--surface-2);
   }
   .trace-section { margin-bottom: 12px; }
   .trace-section:last-child { margin-bottom: 0; }
   .trace-section h4 {
     margin: 0 0 7px; font-size: 10px; text-transform: uppercase; letter-spacing: .08em;
-    color: var(--muted); font-weight: 650;
+    color: var(--muted); font-weight: 700;
   }
   .trace-row {
     display: flex; align-items: center; gap: 9px; padding: 5px 0;
@@ -444,10 +521,10 @@
   .trace-meta { display: flex; flex-wrap: wrap; gap: 6px; font-size: 10.5px; color: var(--muted); }
   .trace-meta span { background: var(--surface); border: 1px solid var(--line-soft); border-radius: 999px; padding: 2px 9px; }
 
-  .suggest { display: flex; gap: 7px; flex-wrap: wrap; margin-bottom: 14px; }
+  .suggest { display: flex; gap: 7px; flex-wrap: wrap; margin-bottom: 16px; }
   .sugg {
     background: var(--surface); border: 1px solid var(--line); color: var(--ink-soft);
-    border-radius: 999px; padding: 7px 14px; font-size: 12.5px; cursor: pointer;
+    border-radius: 999px; padding: 8px 15px; font-size: 12.5px; cursor: pointer;
     transition: all .12s ease; animation: popIn .22s ease backwards;
   }
   .sugg:hover { border-color: var(--accent); color: var(--accent-ink); background: var(--accent-wash); transform: translateY(-1px); }
@@ -460,11 +537,11 @@
   }
   .composer input {
     flex: 1; background: var(--surface); border: 1px solid var(--line);
-    border-radius: 999px; padding: 12px 18px; font-size: 13.5px; outline: none;
+    border-radius: 999px; padding: 13px 19px; font-size: 13.5px; outline: none;
     transition: border-color .12s ease, box-shadow .12s ease;
   }
   .composer input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-wash); }
-  .composer .btn { border-radius: 999px; padding: 11px 20px; }
+  .composer .btn { border-radius: 999px; padding: 12px 22px; }
 
   /* ---------- loading ---------- */
   .skel { display: flex; flex-direction: column; gap: 9px; }
@@ -489,7 +566,7 @@
     display: flex; flex-direction: column; gap: 8px; z-index: 60; align-items: center;
   }
   .toast {
-    background: var(--ink); color: #f8f5ef; padding: 11px 18px; border-radius: 999px;
+    background: var(--ink); color: #f8f5ef; padding: 12px 19px; border-radius: 999px;
     font-size: 13px; box-shadow: var(--shadow-lg); animation: rise .22s ease; max-width: 560px;
   }
   .toast.bad { background: var(--high); }
@@ -505,23 +582,27 @@
   #login.show .demo-hint { animation: fadeInUp .3s ease .08s backwards; }
   .login-card {
     background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg);
-    padding: 34px; width: 348px; box-shadow: var(--shadow-lg);
+    padding: 36px; width: 360px; box-shadow: var(--shadow-lg); text-align: center;
   }
-  .login-card .mark { font-family: var(--serif); font-size: 26px; color: var(--accent); }
-  .login-card p { color: var(--muted); font-size: 13px; margin: 4px 0 20px; }
+  .login-card .glyphmark {
+    width: 46px; height: 46px; border-radius: 13px; margin: 0 auto 16px;
+    background: linear-gradient(155deg, var(--accent), var(--accent-ink));
+    display: flex; align-items: center; justify-content: center;
+    color: #fff; font-family: var(--serif); font-size: 24px; font-weight: 600;
+    box-shadow: 0 4px 12px rgba(125,68,19,.35);
+  }
+  .login-card .mark { font-family: var(--serif); font-size: 22px; font-weight: 600; color: var(--ink); }
+  .login-card p { color: var(--muted); font-size: 13px; margin: 5px 0 22px; }
   .login-card input {
     width: 100%; background: var(--surface-2); border: 1px solid var(--line);
-    border-radius: var(--r-sm); padding: 11px 13px; margin-bottom: 10px; outline: none;
+    text-align: left;
+    border-radius: var(--r-sm); padding: 12px 14px; margin-bottom: 10px; outline: none;
     transition: border-color .12s ease, box-shadow .12s ease;
   }
   .login-card input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-wash); }
-  #loginErr { color: var(--high); font-size: 12.5px; min-height: 17px; margin-top: 9px; }
-  /* Demo convenience only -- remove this block for any real deployment.
-     Sanad never stores plaintext passwords once created (see
-     sanad/create_user.py); this is a hint to whoever is running the
-     local demo, not something derived from the server. */
+  #loginErr { color: var(--high); font-size: 12.5px; min-height: 17px; margin-top: 10px; }
   .demo-hint {
-    width: 348px; margin-top: 14px; padding: 11px 14px; border-radius: var(--r-sm);
+    width: 360px; margin-top: 16px; padding: 12px 15px; border-radius: var(--r-sm);
     background: var(--surface-2); border: 1px dashed var(--line);
     font-size: 12px; color: var(--muted); text-align: center;
   }
@@ -530,9 +611,7 @@
   @media (max-width: 860px) {
     .sidebar { display: none; }
     .pane, .dochead { padding-left: 16px; padding-right: 16px; }
-    /* No room for a second (section) sidebar alongside the document
-       list at this width -- collapse .section-nav from a vertical
-       grouped list to the old horizontal scrollable strip instead. */
+    .risk-overview { flex-direction: column; align-items: stretch; }
     .workspace-body { flex-direction: column; }
     .section-nav {
       flex-direction: row; align-items: center; width: auto; height: auto;
@@ -548,7 +627,7 @@
 
   /* ---------- learn panel ---------- */
   #learnPanel {
-    position: fixed; inset: 0; background: rgba(0,0,0,.25); z-index: 80;
+    position: fixed; inset: 0; background: rgba(20,16,10,.35); z-index: 80;
     display: none; align-items: flex-start; justify-content: center; padding: 48px 16px;
     overflow-y: auto;
   }
@@ -556,16 +635,16 @@
   #learnPanel.show .learn-card { animation: popIn .22s ease; }
   .learn-card {
     background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg);
-    width: 620px; max-width: 100%; box-shadow: var(--shadow-lg); padding: 30px 32px 24px;
+    width: 620px; max-width: 100%; box-shadow: var(--shadow-lg); padding: 32px 34px 26px;
   }
   .learn-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; }
-  .learn-head h2 { font-family: var(--serif); font-size: 22px; margin: 0; color: var(--accent); }
-  .learn-close { background: none; border: none; font-size: 20px; color: var(--muted); cursor: pointer; line-height: 1; padding: 4px; }
-  .learn-close:hover { color: var(--ink); }
+  .learn-head h2 { font-family: var(--serif); font-size: 22px; font-weight: 600; margin: 0; color: var(--accent-ink); }
+  .learn-close { background: none; border: none; font-size: 20px; color: var(--muted); cursor: pointer; line-height: 1; padding: 4px; border-radius: 6px; }
+  .learn-close:hover { color: var(--ink); background: var(--surface-2); }
   .learn-intro { color: var(--muted); font-size: 13px; margin: 2px 0 20px; }
   .learn-item { border-top: 1px solid var(--line-soft); padding: 16px 0; }
   .learn-item:first-of-type { border-top: none; padding-top: 4px; }
-  .learn-item h3 { font-size: 14.5px; margin: 0 0 6px; font-family: var(--serif); }
+  .learn-item h3 { font-size: 14.5px; font-weight: 630; margin: 0 0 6px; font-family: var(--serif); }
   .learn-item p { font-size: 13px; color: var(--ink-soft); line-height: 1.55; margin: 0 0 8px; }
   .learn-item p:last-child { margin-bottom: 0; }
 </style>
@@ -575,6 +654,7 @@
 <div id="login">
   <div>
     <div class="login-card">
+      <div class="glyphmark">S</div>
       <div class="mark">Sanad</div>
       <p>Sign in to reach your contracts.</p>
       <input type="text" id="loginUser" placeholder="Username" autocomplete="username" />
@@ -589,13 +669,17 @@
 <div class="app">
   <div class="topbar">
     <div class="brand">
-      <span class="mark">Sanad</span>
-      <span class="tag">contract workspace</span>
+      <span class="glyphmark">S</span>
+      <span class="word">
+        <span class="mark">Sanad</span>
+        <span class="tag">contract workspace</span>
+      </span>
     </div>
     <div class="spacer"></div>
     <span class="chip-quiet"><span class="dot"></span>runs on this machine</span>
     <span class="chip-quiet" id="modelChip" style="display:none"></span>
-    <button class="linkish" id="learnBtn" style="margin-left:4px;">Learn</button>
+    <span class="topbar divider"></span>
+    <button class="linkish" id="learnBtn">Learn</button>
     <span id="userBar" style="display:none;align-items:center;gap:4px;">
       <span class="chip-quiet" id="userName"></span>
       <button class="linkish" id="logoutBtn">Sign out</button>
@@ -655,16 +739,25 @@
   <div class="body">
     <aside class="sidebar">
       <div class="sidebar-head"><h2>Documents</h2><span class="pill" id="docCount">0</span></div>
+      <div class="sidebar-search">
+        <input type="text" id="docSearch" placeholder="Search your documents…" autocomplete="off" />
+      </div>
       <div class="doclist" id="docList"></div>
       <div class="sidebar-foot">
-        <button class="btn ghost wide" id="newDocBtn">＋ Add a contract</button>
+        <button class="btn wide" id="newDocBtn">＋ Add a contract</button>
       </div>
     </aside>
 
     <main class="main">
       <div class="empty-stage" id="stage">
         <div class="dropzone" id="dropzone">
-          <div class="glyph">📄</div>
+          <div class="glyph">
+            <svg width="26" height="26" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M4.4 1.8h4.6l3 3v8.6a.8.8 0 0 1-.8.8H4.4a.8.8 0 0 1-.8-.8V2.6a.8.8 0 0 1 .8-.8Z"/>
+              <path d="M9 1.8v3h3"/>
+              <path d="M5.6 8.4h4.8M5.6 10.6h4.8M5.6 6.2h2.6"/>
+            </svg>
+          </div>
           <h2>Read the contract before you sign it</h2>
           <p>Sanad flags clauses that work against you, summarises the terms in plain
              language, and answers questions using only the document's own words.</p>
@@ -688,34 +781,63 @@
             <h1 id="docTitle"></h1>
             <div class="meta" id="docMeta"></div>
           </div>
-          <button class="linkish" id="deleteBtn" title="Remove this document">Remove</button>
+          <div class="dochead-actions">
+            <button class="linkish" id="deleteBtn" title="Remove this document">Remove</button>
+          </div>
         </div>
 
         <div class="workspace-body">
           <nav class="section-nav" id="sectionNav">
             <div class="nav-group">
               <div class="nav-group-label">Orientation</div>
-              <button class="nav-item" data-pane="overview">Overview</button>
-              <button class="nav-item active" data-pane="risks">Risk scan <span class="count" id="tabRiskCount"></span></button>
-              <button class="nav-item" data-pane="review">Review</button>
+              <button class="nav-item" data-pane="overview">
+                <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6.2"/><path d="M10.4 5.6 7 7 5.6 10.4 9 9Z"/></svg>
+                <span class="label">Overview</span>
+              </button>
+              <button class="nav-item active" data-pane="risks">
+                <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2.2 14.2 13H1.8Z"/><path d="M8 6.6v3"/><circle cx="8" cy="11.3" r="0.6" fill="currentColor" stroke="none"/></svg>
+                <span class="label">Risk scan</span> <span class="count" id="tabRiskCount"></span>
+              </button>
+              <button class="nav-item" data-pane="review">
+                <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="2.6" width="8" height="11.4" rx="1.4"/><path d="M6 8.2 7.3 9.5 10.1 6.6"/></svg>
+                <span class="label">Review</span>
+              </button>
             </div>
             <span class="nav-sep"></span>
             <div class="nav-group">
               <div class="nav-group-label">Ask</div>
-              <button class="nav-item" data-pane="summary">Summary</button>
-              <button class="nav-item" data-pane="ask">Ask</button>
-              <button class="nav-item" data-pane="scenario">Scenario</button>
+              <button class="nav-item" data-pane="summary">
+                <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4.4 1.8h4.6l3 3v8.6a.8.8 0 0 1-.8.8H4.4a.8.8 0 0 1-.8-.8V2.6a.8.8 0 0 1 .8-.8Z"/><path d="M9 1.8v3h3"/><path d="M5.6 8.4h4.8M5.6 10.6h4.8"/></svg>
+                <span class="label">Summary</span>
+              </button>
+              <button class="nav-item" data-pane="ask">
+                <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2.4 3.6a1 1 0 0 1 1-1h9.2a1 1 0 0 1 1 1v6.2a1 1 0 0 1-1 1H7.4L4.4 13.4v-2.6H3.4a1 1 0 0 1-1-1Z"/></svg>
+                <span class="label">Ask</span>
+              </button>
+              <button class="nav-item" data-pane="scenario">
+                <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="4" cy="3.6" r="1.5"/><circle cx="4" cy="12.4" r="1.5"/><circle cx="12" cy="8" r="1.5"/><path d="M4 5.1v5.8"/><path d="M5.3 8c1.4 0 3.4 0 5.5 0"/></svg>
+                <span class="label">Scenario</span>
+              </button>
             </div>
             <span class="nav-sep"></span>
             <div class="nav-group">
               <div class="nav-group-label">Multi-document</div>
-              <button class="nav-item" data-pane="compare">Compare</button>
-              <button class="nav-item" data-pane="versions">Versions</button>
+              <button class="nav-item" data-pane="compare">
+                <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><rect x="2.2" y="2.4" width="5" height="11.2" rx="1.1"/><rect x="8.8" y="2.4" width="5" height="11.2" rx="1.1"/></svg>
+                <span class="label">Compare</span>
+              </button>
+              <button class="nav-item" data-pane="versions">
+                <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8.2" r="6"/><path d="M8 4.8v3.6l2.6 1.6"/></svg>
+                <span class="label">Versions</span>
+              </button>
             </div>
             <span class="nav-sep"></span>
             <div class="nav-group">
               <div class="nav-group-label">Source</div>
-              <button class="nav-item" data-pane="document">Document</button>
+              <button class="nav-item" data-pane="document">
+                <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4.4 1.8h4.6l3 3v8.6a.8.8 0 0 1-.8.8H4.4a.8.8 0 0 1-.8-.8V2.6a.8.8 0 0 1 .8-.8Z"/><path d="M9 1.8v3h3"/><path d="M5.6 8.4h4.8M5.6 10.6h4.8M5.6 6.2h2.6"/></svg>
+                <span class="label">Document</span>
+              </button>
             </div>
           </nav>
 
@@ -725,6 +847,7 @@
             <div class="pane" id="pane-summary" hidden><div class="wrap" id="summaryBody"></div></div>
             <div class="pane" id="pane-ask" hidden>
               <div class="wrap">
+                <div class="chat-context" id="chatContext">Asking about <b id="chatContextName"></b></div>
                 <div class="suggest" id="suggest"></div>
                 <div class="chat-scroll" id="chatLog"></div>
                 <div class="composer">
@@ -746,12 +869,12 @@
             <div class="pane" id="pane-compare" hidden>
               <div class="wrap">
                 <div style="display:flex;gap:10px;align-items:center;margin-bottom:14px;">
-                  <span class="fineprint">Compare against</span>
+                  <span class="fineprint" style="margin-top:0;">Compare against</span>
                   <select id="compareSelect"></select>
                 </div>
                 <div id="compareBody"></div>
                 <div id="crossChatSection" style="margin-top:24px;border-top:1px solid var(--line);padding-top:16px;">
-                  <h4 style="margin:0 0 10px;font-size:13px;color:var(--ink-2);">Ask across both documents</h4>
+                  <h4 class="section-h" style="font-size:15px;">Ask across both documents</h4>
                   <div style="display:flex;gap:10px;">
                     <input id="crossChatInput" type="text" placeholder="e.g. does the notice period match?" style="flex:1;" />
                     <button class="btn" id="crossChatBtn">Ask</button>
@@ -781,6 +904,7 @@
 const API = "/api";
 let docs = [];
 let currentId = null;
+let docFilter = "";
 const riskCache = {};   // doc_id -> risk report
 const sumCache = {};    // doc_id -> summary
 const chatCache = {};   // doc_id -> [html]
@@ -871,6 +995,8 @@ async function doLogin() {
 }
 
 /* ---------------- documents ---------------- */
+const FILE_ICON = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4.4 1.8h4.6l3 3v8.6a.8.8 0 0 1-.8.8H4.4a.8.8 0 0 1-.8-.8V2.6a.8.8 0 0 1 .8-.8Z"/><path d="M9 1.8v3h3"/></svg>';
+
 function renderDocList() {
   const list = document.getElementById("docList");
   document.getElementById("docCount").textContent = docs.length;
@@ -878,8 +1004,14 @@ function renderDocList() {
     list.innerHTML = '<div class="none">Nothing here yet.</div>';
     return;
   }
+  const q = docFilter.trim().toLowerCase();
+  const visible = docs.filter(d => !q || d.filename.toLowerCase().includes(q));
+  if (!visible.length) {
+    list.innerHTML = '<div class="none">No documents match "' + esc(docFilter) + '".</div>';
+    return;
+  }
   list.innerHTML = "";
-  docs.slice().reverse().forEach(d => {
+  visible.slice().reverse().forEach(d => {
     const b = document.createElement("button");
     b.className = "doc-item" + (d.doc_id === currentId ? " active" : "");
     const r = riskCache[d.doc_id];
@@ -889,11 +1021,14 @@ function renderDocList() {
         ? '<span class="risk-dot high"><i></i>' + r.counts.high + ' high</span>'
         : '<span class="risk-dot clear"><i></i>clear</span>';
     }
-    b.innerHTML = '<div class="name">' + esc(d.filename) + '</div>' +
+    b.innerHTML =
+      '<span class="filetype">' + FILE_ICON + '</span>' +
+      '<div class="doc-copy">' +
+      '<div class="name">' + esc(d.filename) + '</div>' +
       '<div class="sub">' + (d.contract_type ? '<span class="pill" style="text-transform:capitalize;">' + esc(d.contract_type) + '</span>' : '') +
       (d.version_number && d.version_number > 1 ? '<span class="pill" title="A newer or older version of this document exists">v' + d.version_number + '</span>' : '') +
       '<span>' + d.chunk_count + ' clauses</span>' + flag +
-      '<span>' + ago(d.uploaded_at) + '</span></div>';
+      '<span>' + ago(d.uploaded_at) + '</span></div></div>';
     b.onclick = () => selectDoc(d.doc_id);
     list.appendChild(b);
   });
@@ -934,6 +1069,9 @@ function selectDoc(id) {
     '<span class="pill ' + (d.used_ocr ? "warn" : "good") + '">' + (d.used_ocr ? "OCR" : "native text") + '</span>' +
     '<span class="pill">added ' + ago(d.uploaded_at) + '</span>';
 
+  const ctxName = document.getElementById("chatContextName");
+  if (ctxName) ctxName.textContent = d.filename;
+
   renderDocList();
   showTab("risks");
   renderSuggestions(d.contract_type);
@@ -970,7 +1108,10 @@ function showTab(name, jumpToClause) {
   shown.classList.remove("pane-fade");
   void shown.offsetWidth;
   shown.classList.add("pane-fade");
-  if (name === "ask") setTimeout(() => document.getElementById("chatInput").focus(), 30);
+  if (name === "ask") {
+    setTimeout(() => document.getElementById("chatInput").focus(), 30);
+    document.getElementById("chatContext").classList.add("show");
+  }
   if (name === "overview") loadOverview(currentId);
   if (name === "compare") renderCompareSelect();
   if (name === "versions") loadVersions(currentId);
@@ -999,6 +1140,21 @@ async function loadRisks(id) {
     if (currentId === id) renderRisks(r);
     renderDocList();
   } catch (e) { body.innerHTML = '<p class="none">' + esc(e.message) + '</p>'; }
+}
+
+// Highest severity touching each clause index (one value per clause,
+// consistent with the heatmap below) -- shared by the heatmap and the
+// risk overview donut so both reflect the exact same per-clause data.
+function computeClauseSeverity(r) {
+  const bySeverity = { high: 3, medium: 2, low: 1 };
+  const severityAt = new Array(r.clauses_scanned).fill(null);
+  r.findings.forEach(f => {
+    if (f.chunk_index >= 0 && f.chunk_index < r.clauses_scanned) {
+      const current = severityAt[f.chunk_index];
+      if (!current || bySeverity[f.severity] > bySeverity[current]) severityAt[f.chunk_index] = f.severity;
+    }
+  });
+  return severityAt;
 }
 
 function renderRisks(r) {
@@ -1037,30 +1193,70 @@ function renderRisks(r) {
           '<span class="sev-tag ' + f.severity + '">' + f.severity + '</span></div>' +
           '<div class="risk-why">' + esc(f.explanation) + '</div>' +
           '<div class="risk-who">Tends to disadvantage: ' + esc(f.affects) + '</div>' +
+          '<div class="risk-quote-label">From the contract</div>' +
           '<div class="risk-quote">' + esc(f.excerpt) + '</div>' +
           factors +
-          '<button class="linkish" style="padding:2px 0;margin-top:6px;color:var(--accent);" onclick="goToClause(' + f.chunk_index + ')">View in document →</button>' +
+          '<button class="linkish" style="padding:2px 0;margin-top:8px;color:var(--accent);" onclick="goToClause(' + f.chunk_index + ')">View in document →</button>' +
         '</div>';
       }).join("") +
       '<div class="disclaimer">These are pattern matches on the contract\'s own wording, not legal ' +
       'advice. A flagged clause may be perfectly reasonable in context — read the quoted text and ' +
       'judge it yourself.</div>';
 
-  body.innerHTML = '<div class="scanline">' + head + '</div>' + renderHeatmap(r) + items;
+  body.innerHTML = renderRiskOverview(r) + '<div class="scanline">' + head + '</div>' + renderHeatmap(r) + items;
+}
+
+/* ---------------- risk overview (donut + stat tiles) ----------------
+   Purely a re-arrangement of data already computed for the heatmap
+   (per-clause worst severity) into a compact visual summary -- no new
+   extraction, no invented "safety score". */
+function renderRiskOverview(r) {
+  if (!r.clauses_scanned) return "";
+  const severityAt = computeClauseSeverity(r);
+  const counts = { high: 0, medium: 0, low: 0, none: 0 };
+  severityAt.forEach(s => counts[s || "none"]++);
+  const total = r.clauses_scanned;
+  const flagged = total - counts.none;
+
+  const RADIUS = 54, CIRC = 2 * Math.PI * RADIUS;
+  const order = [["high", "var(--high)"], ["medium", "var(--medium)"], ["low", "var(--low)"], ["none", "var(--line-soft)"]];
+  let offset = 0;
+  const segs = order.map(([key, color]) => {
+    const frac = counts[key] / total;
+    const len = Math.max(frac * CIRC - (frac > 0 && frac < 1 ? 1.5 : 0), 0);
+    const seg = '<circle cx="70" cy="70" r="' + RADIUS + '" fill="none" stroke="' + color + '" stroke-width="14" ' +
+      'stroke-dasharray="' + len + ' ' + (CIRC - len) + '" stroke-dashoffset="' + (-offset) + '" ' +
+      'stroke-linecap="round" transform="rotate(-90 70 70)" />';
+    offset += frac * CIRC;
+    return seg;
+  }).join("");
+
+  const tile = (label, num, cls) =>
+    '<div class="stat-tile"><span class="stat-dot ' + cls + '"></span>' +
+    '<span class="stat-num">' + num + '</span><span class="stat-label">' + label + '</span></div>';
+
+  return '<div class="risk-overview">' +
+    '<div class="donut-wrap">' +
+      '<svg width="140" height="140" viewBox="0 0 140 140">' +
+        '<circle cx="70" cy="70" r="' + RADIUS + '" fill="none" stroke="var(--line-soft)" stroke-width="14" />' +
+        segs +
+      '</svg>' +
+      '<div class="donut-center"><div class="donut-num">' + flagged + '</div>' +
+      '<div class="donut-label">of ' + total + ' clauses<br/>flagged</div></div>' +
+    '</div>' +
+    '<div class="stat-tiles">' +
+      tile("High risk", counts.high, "high") +
+      tile("Medium risk", counts.medium, "medium") +
+      tile("Low risk", counts.low, "low") +
+      tile("Nothing flagged", counts.none, "good") +
+    '</div>' +
+  '</div>';
 }
 
 /* ---------------- risk heatmap ---------------- */
 function renderHeatmap(r) {
   if (!r.clauses_scanned) return "";
-  // Highest severity touching each clause index, else no finding there.
-  const bySeverity = { high: 3, medium: 2, low: 1 };
-  const severityAt = new Array(r.clauses_scanned).fill(null);
-  r.findings.forEach(f => {
-    if (f.chunk_index >= 0 && f.chunk_index < r.clauses_scanned) {
-      const current = severityAt[f.chunk_index];
-      if (!current || bySeverity[f.severity] > bySeverity[current]) severityAt[f.chunk_index] = f.severity;
-    }
-  });
+  const severityAt = computeClauseSeverity(r);
 
   const cells = severityAt.map((sev, i) => {
     const label = "Clause " + (i + 1) + (sev ? ": " + sev + " risk" : ": no flagged risk") + " — click to view";
@@ -1232,7 +1428,7 @@ function renderComparison(c) {
       '</div>';
   };
   const section = (title, rows, side) => rows.length
-    ? '<h4 style="margin:16px 0 8px;font-size:13px;color:var(--ink-2);">' + title + ' (' + rows.length + ')</h4>' +
+    ? '<h4 class="section-h" style="font-size:14px;margin:18px 0 8px;">' + title + ' (' + rows.length + ')</h4>' +
       rows.map(r => row(r, side)).join("")
     : "";
 
@@ -1324,16 +1520,16 @@ function renderReview(data) {
     '</div>').join("");
 
   body.innerHTML = `
-    <h3 style="font-family:var(--serif);font-size:18px;margin:0 0 4px;">Top issues to review</h3>
+    <h3 class="section-h">Top issues to review</h3>
     <div style="margin-bottom:20px;">${topIssues}</div>
 
-    <h3 style="font-family:var(--serif);font-size:18px;margin:0 0 8px;">Questions worth asking the other party</h3>
+    <h3 class="section-h">Questions worth asking the other party</h3>
     <div style="margin-bottom:20px;">${questions}</div>
 
-    <h3 style="font-family:var(--serif);font-size:18px;margin:0 0 8px;">Areas to clarify</h3>
+    <h3 class="section-h">Areas to clarify</h3>
     <div style="margin-bottom:20px;">${clarifications}</div>
 
-    <h3 style="font-family:var(--serif);font-size:18px;margin:0 0 8px;">Obligations &amp; important dates</h3>
+    <h3 class="section-h">Obligations &amp; important dates</h3>
     <div style="overflow-x:auto;margin-bottom:20px;">
       <table>
         <thead><tr><th>Party</th><th>Obligation</th><th>Deadline</th><th>Category</th><th>Grounding</th><th>Source</th></tr></thead>
@@ -1342,7 +1538,7 @@ function renderReview(data) {
     </div>
     <div class="disclaimer">Obligations are extracted by the model, not a fixed rule set -- each is checked against the document's own wording and marked "unverified" when that check fails, rather than being silently dropped or trusted blindly.</div>
 
-    <h3 style="font-family:var(--serif);font-size:18px;margin:20px 0 8px;">Clause coverage</h3>
+    <h3 class="section-h" style="margin-top:20px;">Clause coverage</h3>
     <div>${coverageRows}</div>
     <div class="disclaimer">"Not found" means this scan's patterns didn't match anything -- it is not proof the contract lacks that protection, only that it's worth checking yourself.</div>
   `;
@@ -1388,7 +1584,7 @@ function renderOverview(overview) {
         <div style="display:flex;gap:8px;align-items:center;margin-bottom:2px;">
           <strong style="font-size:13px;">${esc(f.label)}</strong>${statusPill(f.status)}
         </div>
-        ${f.value ? '<div style="font-size:13.5px;color:var(--ink-2);">' + esc(f.value) + '</div>' : ""}
+        ${f.value ? '<div style="font-size:13.5px;color:var(--ink-soft);">' + esc(f.value) + '</div>' : ""}
         ${sourceLink(f.evidence_chunk_index)}
       </div>
     </div>`).join("");
@@ -1400,17 +1596,17 @@ function renderOverview(overview) {
     : '<p class="none">None extracted.</p>';
 
   body.innerHTML = `
-    <h3 style="font-family:var(--serif);font-size:18px;margin:0 0 8px;">Parties</h3>
+    <h3 class="section-h">Parties</h3>
     <div style="margin-bottom:20px;">${itemList(overview.parties)}</div>
 
-    <h3 style="font-family:var(--serif);font-size:18px;margin:0 0 8px;">Key terms</h3>
+    <h3 class="section-h">Key terms</h3>
     <div style="margin-bottom:20px;">${fieldRows}</div>
 
-    <h3 style="font-family:var(--serif);font-size:18px;margin:0 0 8px;">Major obligations</h3>
+    <h3 class="section-h">Major obligations</h3>
     <div style="margin-bottom:8px;">${itemList(overview.major_obligations)}</div>
     <div class="disclaimer">Every "found" or "unclear" item above is checked against the document's own wording -- a claim that doesn't check out is shown as "insufficient evidence" rather than stated as fact. "Not found" means the contract doesn't address that topic, not that something is missing or wrong.</div>
 
-    <h3 style="font-family:var(--serif);font-size:18px;margin:24px 0 8px;">Knowledge map</h3>
+    <h3 class="section-h" style="margin-top:24px;">Knowledge map</h3>
     <div style="margin-bottom:8px;">${renderKnowledgeMap(overview)}</div>
     <div class="disclaimer">Parties and terms shown here are exactly the ones above -- nothing new is inferred for this view. A solid line means the connected item is grounded in the document's own text; click a grounded node to jump to its clause.</div>
   `;
@@ -1766,6 +1962,11 @@ document.addEventListener("DOMContentLoaded", async () => {
   dz.addEventListener("drop", e => upload(e.dataTransfer.files[0]));
 
   document.querySelectorAll(".nav-item").forEach(t => t.onclick = () => showTab(t.dataset.pane));
+
+  document.getElementById("docSearch").addEventListener("input", e => {
+    docFilter = e.target.value;
+    renderDocList();
+  });
 
   document.getElementById("askBtn").onclick = ask;
   document.getElementById("chatInput").addEventListener("keydown", e => { if (e.key === "Enter") ask(); });
