@@ -69,6 +69,24 @@ def test_list_version_group_of_a_standalone_legacy_document_is_just_itself(fresh
     assert [r.doc_id for r in chain] == ["legacy-doc"]
 
 
+def test_list_version_group_skips_a_deleted_version(fresh_db):
+    """version_group_id is just a stored string, not a foreign key that
+    requires the referenced row to still exist -- deleting one version
+    (even the root, whose own doc_id the others' version_group_id
+    stores) must not break looking up the rest of the chain."""
+    db.save_document(_record(doc_id="doc-1", version_group_id="doc-1", version_number=1))
+    db.save_document(_record(doc_id="doc-2", version_group_id="doc-1", version_number=2))
+    db.save_document(_record(doc_id="doc-3", version_group_id="doc-1", version_number=3))
+
+    db.delete_document("doc-2")  # delete a middle version
+    chain = db.list_version_group("doc-1")
+    assert [r.doc_id for r in chain] == ["doc-1", "doc-3"]
+
+    db.delete_document("doc-1")  # delete the root version itself
+    chain = db.list_version_group("doc-1")  # group id string still resolves
+    assert [r.doc_id for r in chain] == ["doc-3"]
+
+
 def test_get_unknown_document_returns_none(fresh_db):
     assert db.get_document("does-not-exist") is None
 

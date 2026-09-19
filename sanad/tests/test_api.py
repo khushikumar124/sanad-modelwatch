@@ -554,6 +554,26 @@ def test_standalone_upload_is_version_1_of_its_own_chain():
     assert [v["doc_id"] for v in versions] == [doc_id]
 
 
+def test_deleting_the_root_version_leaves_the_rest_of_the_chain_reachable():
+    """The root version's own doc_id is what the rest of the chain
+    stores as version_group_id -- deleting it must not orphan the
+    remaining versions' /versions lookup."""
+    with open(RENTAL_DOC, "rb") as f:
+        v1 = client.post("/api/documents", files={"file": ("root_v1.pdf", f, "application/pdf")})
+    v1_id = v1.json()["doc_id"]
+    with open(RENTAL_DOC, "rb") as f:
+        v2 = client.post("/api/documents", files={"file": ("root_v2.pdf", f, "application/pdf")}, data={"new_version_of": v1_id})
+    v2_id = v2.json()["doc_id"]
+
+    assert client.delete(f"/api/documents/{v1_id}").status_code == 204
+
+    versions = client.get(f"/api/documents/{v2_id}/versions").json()["versions"]
+    assert [v["doc_id"] for v in versions] == [v2_id]
+
+    # The deleted root itself 404s like any other deleted document.
+    assert client.get(f"/api/documents/{v1_id}/versions").status_code == 404
+
+
 def test_versions_unknown_document_returns_404():
     res = client.get("/api/documents/does-not-exist/versions")
     assert res.status_code == 404
