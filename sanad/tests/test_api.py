@@ -490,6 +490,75 @@ def test_delete_document_removes_it():
     assert get_res.status_code == 404
 
 
+def test_new_version_of_joins_the_existing_chain():
+    with open(RENTAL_DOC, "rb") as f:
+        v1 = client.post("/api/documents", files={"file": ("v1.pdf", f, "application/pdf")})
+    v1_id = v1.json()["doc_id"]
+    assert v1.json()["version_number"] == 1
+
+    with open(RENTAL_DOC, "rb") as f:
+        v2 = client.post(
+            "/api/documents",
+            files={"file": ("v2.pdf", f, "application/pdf")},
+            data={"new_version_of": v1_id},
+        )
+    assert v2.status_code == 201
+    assert v2.json()["version_number"] == 2
+
+    versions = client.get(f"/api/documents/{v1_id}/versions").json()["versions"]
+    assert [v["version_number"] for v in versions] == [1, 2]
+    assert {v["doc_id"] for v in versions} == {v1_id, v2.json()["doc_id"]}
+
+
+def test_uploading_a_third_version_gets_version_3_even_when_referencing_v1():
+    """new_version_of only needs to point at *a* document in the chain --
+    the next version number comes from the whole chain's max, not from
+    the referenced document's own version_number, so this can't produce
+    a duplicate version number by pointing at an old version."""
+    with open(RENTAL_DOC, "rb") as f:
+        v1 = client.post("/api/documents", files={"file": ("chain_v1.pdf", f, "application/pdf")})
+    v1_id = v1.json()["doc_id"]
+
+    with open(RENTAL_DOC, "rb") as f:
+        client.post("/api/documents", files={"file": ("chain_v2.pdf", f, "application/pdf")}, data={"new_version_of": v1_id})
+
+    with open(RENTAL_DOC, "rb") as f:
+        v3 = client.post(
+            "/api/documents",
+            files={"file": ("chain_v3.pdf", f, "application/pdf")},
+            data={"new_version_of": v1_id},  # deliberately references v1, not v2
+        )
+    assert v3.json()["version_number"] == 3
+
+    versions = client.get(f"/api/documents/{v1_id}/versions").json()["versions"]
+    assert [v["version_number"] for v in versions] == [1, 2, 3]
+
+
+def test_new_version_of_unknown_document_returns_404():
+    with open(RENTAL_DOC, "rb") as f:
+        res = client.post(
+            "/api/documents",
+            files={"file": ("orphan.pdf", f, "application/pdf")},
+            data={"new_version_of": "does-not-exist"},
+        )
+    assert res.status_code == 404
+
+
+def test_standalone_upload_is_version_1_of_its_own_chain():
+    with open(RENTAL_DOC, "rb") as f:
+        res = client.post("/api/documents", files={"file": ("standalone.pdf", f, "application/pdf")})
+    doc_id = res.json()["doc_id"]
+    assert res.json()["version_number"] == 1
+
+    versions = client.get(f"/api/documents/{doc_id}/versions").json()["versions"]
+    assert [v["doc_id"] for v in versions] == [doc_id]
+
+
+def test_versions_unknown_document_returns_404():
+    res = client.get("/api/documents/does-not-exist/versions")
+    assert res.status_code == 404
+
+
 def test_frontend_is_served_at_root():
     res = client.get("/")
     assert res.status_code == 200
