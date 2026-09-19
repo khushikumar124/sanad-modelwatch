@@ -13,6 +13,7 @@ class DocumentResponse(BaseModel):
     chunk_count: int
     used_ocr: bool
     uploaded_at: str
+    version_number: int | None = None
 
 
 class LoginRequest(BaseModel):
