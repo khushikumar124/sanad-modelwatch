@@ -30,7 +30,10 @@
     --accent-wash:#f4e6d5;
 
     --high:       #a53d2c;  --high-wash:   #f7e5e1;
-    --medium:     #93701a;  --medium-wash: #f8eed6;
+    /* --medium against --medium-wash measured ~3.98:1 (fails 4.5:1 AA
+       for normal text -- checked all four severity colors, only this
+       one failed). Darkened slightly; --high/--low/--good already pass. */
+    --medium:     #83621a;  --medium-wash: #f8eed6;
     --low:        #4d6b78;  --low-wash:    #e8eef1;
     --good:       #3d6b52;  --good-wash:   #e4efe8;
 
