@@ -187,26 +187,43 @@ is trained from scratch anywhere in this repo. ModelWatch is deliberately
 even; only its adapters do) — classical statistics, on purpose, so it can
 watch a model without loading one itself. The one place a real supervised
 model *is* trained and tested with a held-out procedure is `ml/`, and
-it's genuinely three experiments, documented in `docs/ml_experiment.md`.
+it's genuinely four experiments, documented in `docs/ml_experiment.md`.
 The first (`train_risk_classifier.py`: TF-IDF, one 75/25 split) is a
-negative result — with only ~10 positive training examples this repo's
-sample contracts provide, the model is statistically identical to a
-majority-class baseline, checked across three configurations. Rather
-than stopping there, the second (`train_embeddings_loocv.py`: sentence
-embeddings, leave-one-out CV) fixes the two things actually holding the
-first one back — representation and evaluation efficiency, not a
-retrained-until-lucky number — and gets a real positive result: 62%
-recall on flagged clauses vs. 0% before, same labels, same documents.
-Precision is still low (0.18), so it's a recall-oriented pre-filter, not
+negative result — with only a handful of positive training examples
+this repo's sample contracts provide, the model is statistically
+identical to a majority-class baseline. Rather than stopping there, the
+second (`train_embeddings_loocv.py`: sentence embeddings, leave-one-out
+CV) fixes the two things actually holding the first one back —
+representation and evaluation efficiency, not a retrained-until-lucky
+number — and gets a real positive result: roughly 60% recall on flagged
+clauses vs. 0% before, same labels, same documents (this exact number
+has moved between 58-62% as the dataset grew across three sizes — say
+that unprompted too, don't present a single snapshot as fixed).
+Precision is still low (0.20), so it's a recall-oriented pre-filter, not
 a deployable detector — say that unprompted, don't wait to be asked. The
 obvious next question, "can you just raise the threshold to fix
 precision," was actually tried, not just claimed impossible:
-`threshold_tuning.py` sweeps the cutoff and finds 0.5 is already close
-to the best F1 available — a third negative result, kept and reported
-rather than left as a shrug. Reporting all three, and being precise
-about what the positive one does and doesn't prove, is more defensible
-than either a flattering number alone or stopping at the first negative
-one.
+`threshold_tuning.py` sweeps the cutoff, and on the original small
+dataset found 0.5 was already close to the best F1 available. The
+fourth experiment then pulled the two remaining honest levers —
+LLM-paraphrase augmentation of the existing flagged clauses, evaluated
+with leave-one-**group**-out CV so a paraphrase can't leak into training
+while its own source clause is held out, plus more real documents added
+in two separate rounds (10 → 18 → 32 documents, 13 → 16 → 19 real
+positives) specifically to grow the positive class. Augmentation vs. no
+augmentation on the same dataset reliably roughly doubles precision
+(0.20 → 0.50 currently); re-running the threshold sweep on the larger
+dataset also reversed the original negative finding, with the best
+threshold moving up as data grew (0.5 → 0.6 → 0.7 across three sizes).
+But — say this part unprompted too, it's the most defensible thing about
+this project's ML story — adding more real documents was *not* a clean
+monotonic win: precision was actually higher at 18 documents (0.56) than
+at 32 (0.50), because the second round's new categories (power of
+attorney, corporate resolutions) are more different from the original
+rental/employment/freelance clauses the rule engine was tuned against.
+Reporting that regression honestly, rather than only keeping the
+better-looking earlier number, is the actual point of running four
+experiments instead of stopping at the first flattering one.
 
 **"You said ModelWatch is Sanad-independent — is it, really?"**
 It wasn't, technically, until this was caught: `modelwatch/api/app.py`

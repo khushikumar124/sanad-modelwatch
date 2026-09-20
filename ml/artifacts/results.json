@@ -1,18 +1,18 @@
 {
   "dataset": {
     "path": "/Users/khushikumar/Desktop/SWE_PROJ/ml/data/clause_risk_dataset_v1.jsonl",
-    "n_total": 584,
-    "n_train": 438,
-    "n_test": 146,
+    "n_total": 760,
+    "n_train": 570,
+    "n_test": 190,
     "label_distribution": {
-      "none": 571,
-      "high": 7,
-      "medium": 4,
+      "none": 741,
+      "high": 12,
+      "medium": 5,
       "low": 2
     },
     "binary_label_distribution": {
-      "none": 571,
-      "flagged": 13
+      "none": 741,
+      "flagged": 19
     },
     "stratified_split": true
   },
@@ -30,19 +30,19 @@
       ],
       "confusion_matrix": [
         [
-          143,
+          184,
+          1,
+          0,
+          0
+        ],
+        [
+          3,
           0,
           0,
           0
         ],
         [
-          2,
-          0,
-          0,
-          0
-        ],
-        [
-          0,
+          1,
           0,
           0,
           0
@@ -54,25 +54,25 @@
           0
         ]
       ],
-      "macro_f1": 0.24740484429065743,
+      "macro_f1": 0.24598930481283424,
       "per_class": {
         "none": {
-          "precision": 0.9794520547945206,
-          "recall": 1.0,
-          "f1": 0.9896193771626297,
-          "support": 143.0
+          "precision": 0.9735449735449735,
+          "recall": 0.9945945945945946,
+          "f1": 0.983957219251337,
+          "support": 185.0
         },
         "high": {
           "precision": 0.0,
           "recall": 0.0,
           "f1": 0.0,
-          "support": 2.0
+          "support": 3.0
         },
         "low": {
           "precision": 0.0,
           "recall": 0.0,
           "f1": 0.0,
-          "support": 0.0
+          "support": 1.0
         },
         "medium": {
           "precision": 0.0,
@@ -81,7 +81,7 @@
           "support": 1.0
         }
       },
-      "accuracy": 0.9794520547945206
+      "accuracy": 0.968421052631579
     },
     "majority_class_baseline": {
       "labels": [
@@ -92,19 +92,19 @@
       ],
       "confusion_matrix": [
         [
-          143,
+          185,
           0,
           0,
           0
         ],
         [
-          2,
+          3,
           0,
           0,
           0
         ],
         [
-          0,
+          1,
           0,
           0,
           0
@@ -116,25 +116,25 @@
           0
         ]
       ],
-      "macro_f1": 0.24740484429065743,
+      "macro_f1": 0.24666666666666667,
       "per_class": {
         "none": {
-          "precision": 0.9794520547945206,
+          "precision": 0.9736842105263158,
           "recall": 1.0,
-          "f1": 0.9896193771626297,
-          "support": 143.0
+          "f1": 0.9866666666666667,
+          "support": 185.0
         },
         "high": {
           "precision": 0.0,
           "recall": 0.0,
           "f1": 0.0,
-          "support": 2.0
+          "support": 3.0
         },
         "low": {
           "precision": 0.0,
           "recall": 0.0,
           "f1": 0.0,
-          "support": 0.0
+          "support": 1.0
         },
         "medium": {
           "precision": 0.0,
@@ -143,7 +143,7 @@
           "support": 1.0
         }
       },
-      "accuracy": 0.9794520547945206
+      "accuracy": 0.9736842105263158
     },
     "learned_model_binary": {
       "labels": [
@@ -152,30 +152,30 @@
       ],
       "confusion_matrix": [
         [
-          143,
-          0
+          183,
+          2
         ],
         [
-          3,
+          5,
           0
         ]
       ],
-      "macro_f1": 0.49480968858131485,
+      "macro_f1": 0.4906166219839142,
       "per_class": {
         "none": {
-          "precision": 0.9794520547945206,
-          "recall": 1.0,
-          "f1": 0.9896193771626297,
-          "support": 143.0
+          "precision": 0.973404255319149,
+          "recall": 0.9891891891891892,
+          "f1": 0.9812332439678284,
+          "support": 185.0
         },
         "flagged": {
           "precision": 0.0,
           "recall": 0.0,
           "f1": 0.0,
-          "support": 3.0
+          "support": 5.0
         }
       },
-      "accuracy": 0.9794520547945206
+      "accuracy": 0.9631578947368421
     },
     "majority_class_baseline_binary": {
       "labels": [
@@ -184,30 +184,30 @@
       ],
       "confusion_matrix": [
         [
-          143,
+          185,
           0
         ],
         [
-          3,
+          5,
           0
         ]
       ],
-      "macro_f1": 0.49480968858131485,
+      "macro_f1": 0.49333333333333335,
       "per_class": {
         "none": {
-          "precision": 0.9794520547945206,
+          "precision": 0.9736842105263158,
           "recall": 1.0,
-          "f1": 0.9896193771626297,
-          "support": 143.0
+          "f1": 0.9866666666666667,
+          "support": 185.0
         },
         "flagged": {
           "precision": 0.0,
           "recall": 0.0,
           "f1": 0.0,
-          "support": 3.0
+          "support": 5.0
         }
       },
-      "accuracy": 0.9794520547945206
+      "accuracy": 0.9736842105263158
     }
   }
 }

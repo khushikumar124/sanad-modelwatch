@@ -49,7 +49,7 @@ test a real supervised model — a clause-risk classifier — reports both a
 negative result (TF-IDF, a single train/test split) and, after fixing
 two real methodological weaknesses the first attempt surfaced (embeddings
 instead of bag-of-words, leave-one-out CV instead of one split), a
-genuine positive one: 62% recall on flagged clauses versus 0% before,
+genuine positive one: roughly 60% recall on flagged clauses versus 0% before,
 same labels, same documents. See
 [`docs/ml_experiment.md`](docs/ml_experiment.md) for both, including
 what the positive result does and doesn't support.
@@ -169,7 +169,7 @@ and an explicit limitations section rather than hedged language:
 | [`docs/evaluation.md`](docs/evaluation.md) | Sanad's RAG evaluation dataset and scoring, and the CI-style quality gate it feeds |
 | [`docs/contract_intelligence.md`](docs/contract_intelligence.md) | Obligation extraction, coverage, contradictions, and review synthesis |
 | [`docs/research.md`](docs/research.md) | The hypotheses this codebase can actually test, what's been measured vs. not, and concrete next steps |
-| [`docs/ml_experiment.md`](docs/ml_experiment.md) | Three real trained/tested supervised classifier experiments (clause risk severity) — a negative result, a diagnosis of why, a second experiment that fixes it (62% recall vs. 0%), and a third checking whether threshold tuning can fix the low precision that remains (it can't) |
+| [`docs/ml_experiment.md`](docs/ml_experiment.md) | Four real trained/tested supervised classifier experiments (clause risk severity) — a negative result, a diagnosis of why, a fix (roughly 60% recall vs. 0%), threshold tuning (a real gain that grows as the dataset grows), and data augmentation + more real documents (a mixed but net-positive result: augmentation reliably helps, more raw documents alone does not monotonically) |
 
 ## Honest framing
 
