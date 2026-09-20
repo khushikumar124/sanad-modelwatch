@@ -82,11 +82,15 @@ Tests need no servers running at all:
 python -m pytest -v
 ```
 
-501 tests, real end-to-end coverage (real HTTP servers via
-`pytest-httpserver`, a real mocked S3 API via `moto`, and this session's
-work was also verified against an actual local Postgres instance) —
+507 tests, real end-to-end coverage (real HTTP servers via
+`pytest-httpserver`, a real mocked S3 API via `moto`, this session's
+work was also verified against an actual local Postgres instance, and
+`sanad/tests/frontend/` drives the actual frontend/index.html in a real
+headless browser against the real running app — not just its API) —
 mocking is used only where the alternative is calling a real network
-service.
+service. `playwright install chromium` is needed once for the frontend
+suite; skip it with `pytest --ignore=sanad/tests/frontend` if you'd
+rather not install a browser.
 
 ## Ship it
 

@@ -40,5 +40,12 @@ jobs:
           pip install -r modelwatch/requirements.txt
           pip install -e "./modelwatch-client[langchain]"
 
+      # sanad/tests/frontend/ drives the real frontend/index.html in a
+      # real headless browser (see that directory's conftest.py) --
+      # --with-deps also installs the OS-level libraries a fresh Ubuntu
+      # runner doesn't have, not just the browser binary itself.
+      - name: Install Playwright's browser
+        run: playwright install --with-deps chromium
+
       - name: Run test suite
         run: python -m pytest -v

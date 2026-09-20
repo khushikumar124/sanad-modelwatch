@@ -16,3 +16,7 @@ boto3>=1.34
 moto[s3]>=5.0
 rank-bm25>=0.2
 clamd>=1.0
+# Frontend E2E tests (sanad/tests/frontend/) drive the real
+# frontend/index.html in a real headless browser against a real running
+# app -- run `playwright install chromium` once after installing this.
+pytest-playwright>=0.5
