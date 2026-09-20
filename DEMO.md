@@ -100,6 +100,10 @@ curl -s -X POST http://localhost:8000/models/demo-classifier/check -H 'Content-T
 Refresh: drift spikes, an alert appears. Click the drifted row for the
 per-feature KS statistics and p-values.
 
+(If asked "how would I connect my own model?": point to the dashboard's
+own "Connect Your Model" page, sidebar under Systems — it shows the same
+registration snippet plus the request schema for each real adapter.)
+
 The architectural claim: `core/engine.py` never imports scipy or sklearn and
 has no model-type branching. It only calls `build_baseline` / `check_drift`
 on the `ModelAdapter` interface. Same engine, same dashboard, for a tabular

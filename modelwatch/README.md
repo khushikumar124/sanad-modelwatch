@@ -198,6 +198,12 @@ curl -X POST http://localhost:8000/models/demo-classifier/check -H 'Content-Type
 
 Refresh the dashboard and pick "Demo Classifier" from the model selector.
 
+The dashboard itself also has a **"Connect Your Model"** page (sidebar,
+under Systems) with the same registration snippet, live counts of what's
+already registered, and the request schema for each of the three real
+adapters (`rag`, `llm`, `classifier`) — useful if you'd rather not read
+this file to get started.
+
 ## API
 
 | Method | Path                          | Purpose                                   |
