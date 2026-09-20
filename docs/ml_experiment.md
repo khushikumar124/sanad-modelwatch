@@ -11,20 +11,23 @@ labels from clause text alone, on clauses it never saw during training?
    — **negative result**. The learned model was statistically
    indistinguishable from a majority-class baseline.
 2. **Sentence embeddings + leave-one-out cross-validation** ([`ml/train_embeddings_loocv.py`](../ml/train_embeddings_loocv.py))
-   — **positive result**. Logistic regression on embeddings catches 62%
+   — **positive result**. Logistic regression on embeddings catches 58%
    of flagged clauses (vs. 0% for the baseline) on the binary task.
 3. **Threshold tuning on experiment 2's own probabilities** ([`ml/threshold_tuning.py`](../ml/threshold_tuning.py))
-   — asks whether precision (0.18 in experiment 2) can be improved for
-   free, just by moving the decision cutoff. **Negative result**: 0.5
-   turns out to already be close to the best F1 available on this data:
-   raising the threshold barely moves precision while recall collapses.
+   — asks whether precision (0.20 in experiment 2) can be improved for
+   free, just by moving the decision cutoff. **Small real gain**, and one
+   that grew as the dataset grew: 0.7 now beats the default 0.5 (F1 0.40
+   vs 0.29) — on an earlier, smaller version of this dataset the same
+   sweep found nothing, reported honestly both ways below.
 4. **LLM-paraphrase augmentation + leave-one-group-out CV** ([`ml/augment_dataset.py`](../ml/augment_dataset.py), [`ml/train_embeddings_grouped_cv.py`](../ml/train_embeddings_grouped_cv.py))
    — experiment 3 confirmed the bottleneck was too few positive examples,
-   not a bad cutoff, so this experiment adds more of them the only honest
-   way available (paraphrasing the real ones, not fabricating new risk
-   categories) and evaluates with a CV scheme that can't leak. **Positive
-   result**: precision more than doubles, 0.18 → 0.50, with recall
-   improving too (0.62 → 0.66).
+   not a bad cutoff, so this experiment adds more of them two honest ways
+   (paraphrasing the real ones, and adding more real documents) and
+   evaluates with a CV scheme that can't leak. **Net-positive but mixed
+   result**: precision roughly doubles vs. no augmentation (0.20 → 0.50),
+   but adding real documents from increasingly different categories did
+   not monotonically improve it further (0.56 at 18 documents → 0.50 at
+   32) — reported plainly rather than kept at the better-looking number.
 
 All four are kept and reported, not just the flattering ones, because
 *why* the first one failed and what specifically fixed it is the actual
