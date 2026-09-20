@@ -175,6 +175,7 @@ and an explicit limitations section rather than hedged language:
 | [`docs/contract_intelligence.md`](docs/contract_intelligence.md) | Obligation extraction, coverage, contradictions, and review synthesis |
 | [`docs/research.md`](docs/research.md) | The hypotheses this codebase can actually test, what's been measured vs. not, and concrete next steps |
 | [`docs/ml_experiment.md`](docs/ml_experiment.md) | Four real trained/tested supervised classifier experiments (clause risk severity) — a negative result, a diagnosis of why, a fix (roughly 60% recall vs. 0%), threshold tuning (a real gain that grows as the dataset grows), and data augmentation + more real documents (a mixed but net-positive result: augmentation reliably helps, more raw documents alone does not monotonically) |
+| [`docs/diagrams.md`](docs/diagrams.md) | System architecture, class diagrams (ModelWatch's adapter pattern, Sanad's ingestion/risk data model), and sequence diagrams (a grounded chat answer, live drift detection + recovery) — every name in them drawn from the actual code |
 
 ## Honest framing
 
