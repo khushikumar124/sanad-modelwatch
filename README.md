@@ -112,10 +112,15 @@ doesn't fix that, it only fixes "how many steps does it take to run this
 somewhere that isn't my machine."
 
 - **[DEMO.md](DEMO.md)** — a runbook that's actually been executed top
-  to bottom, for a live walkthrough.
+  to bottom, for a live walkthrough. Includes real screenshots of both
+  apps (risk scan, grounded chat, ModelWatch catching live drift).
 - **[CODEBASE_TOUR.md](CODEBASE_TOUR.md)** — a guided reading order
   through the code (~45 min) for understanding it well enough to defend
   it, including the questions you should expect.
+
+|  |  |
+|---|---|
+| ![Sanad risk scan](docs/screenshots/sanad_risk_scan.png) | ![ModelWatch catching real drift](docs/screenshots/modelwatch_overview.png) |
 
 ## What's in each project
 

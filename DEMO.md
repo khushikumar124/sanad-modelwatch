@@ -50,6 +50,8 @@ At `http://localhost:8100/`, sign in with `demo` / `demopass123` if prompted.
    data the heatmap below it uses — one shared computation, two views).
    Click a heatmap cell or a risk card's "View in document →" to show
    click-to-source jumping straight to the flagged clause.
+
+   ![Sanad risk scan: donut, stat tiles, heatmap, and a flagged clause with its source text](docs/screenshots/sanad_risk_scan.png)
 3. **Overview tab** — 15 key fields (parties, dates, payment, termination,
    etc.), each `found`/`not_found`/`unclear`/`insufficient_evidence`, plus
    the Knowledge Map (hub-and-spoke SVG built from the same grounded data,
@@ -65,6 +67,8 @@ At `http://localhost:8100/`, sign in with `demo` / `demopass123` if prompted.
    → it refuses instead of inventing. Open the citation disclosure and the
    "AI / RAG trace" on a grounded answer to show the retrieved clause and
    per-sentence claim verification.
+
+   ![Sanad Ask tab: a grounded answer with a real cited clause](docs/screenshots/sanad_chat_grounded_answer.png)
 6. **Review tab** — obligations, coverage gaps, and contradictions
    synthesized into one report with suggested negotiation questions. Also
    a real LLM job — pre-warm it too.
@@ -100,9 +104,15 @@ curl -s -X POST http://localhost:8000/models/demo-classifier/check -H 'Content-T
 Refresh: drift spikes, an alert appears. Click the drifted row for the
 per-feature KS statistics and p-values.
 
+![ModelWatch Live Traffic & Drift: real run history and per-signal breakdown](docs/screenshots/modelwatch_live_traffic_drift.png)
+
 (If asked "how would I connect my own model?": point to the dashboard's
-own "Connect Your Model" page, sidebar under Systems — it shows the same
-registration snippet plus the request schema for each real adapter.)
+own "Connect Your Model" page, sidebar under Systems. It documents the
+Python client, but it also has a live form that registers a model and
+runs a check directly from the browser — no code required, calling the
+exact same `POST /models` / `POST /models/{id}/check` endpoints.)
+
+![ModelWatch's in-browser "register a model, no code" form](docs/screenshots/modelwatch_connect_your_model.png)
 
 The architectural claim: `core/engine.py` never imports scipy or sklearn and
 has no model-type branching. It only calls `build_baseline` / `check_drift`
@@ -131,6 +141,12 @@ then refresh the dashboard:
 | 2. swapped to qwen2.5:0.5b | **~0.14** | **~0.87** | **Degraded — drift detected** | **1** |
 | 4. retrain (swap back to phi3, reset baseline) | — | — | version bumps v1→v2 | alert resolved |
 | 5. follow-up confirms recovery | ~0.50 | ~0.50 | Healthy | 0 |
+
+![ModelWatch Overview showing a real "Degraded — drift detected" alert, with the quality/drift chart crossing the threshold](docs/screenshots/modelwatch_overview.png)
+
+*(This particular screenshot is from the live-traffic model, not this exact
+`simulate_drift_demo` run — but it's the same real mechanism: an actual
+quality/drift chart and alert produced by the engine, not a mockup.)*
 
 (Exact numbers vary run to run — local model sampling isn't deterministic —
 but the *shape*, a sharp quality drop crossing the 0.35 alert threshold and a
