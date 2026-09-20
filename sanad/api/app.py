@@ -66,7 +66,7 @@ from sanad.features.review import build_review
 from sanad.features.risk_flagger import flag_risks
 from sanad.features.trace import build_trace
 from sanad.features.summarizer import summarize
-from sanad.jobs import jobs
+from shared.jobs import jobs
 from sanad.ingestion.chunking import chunk_document
 from sanad.ingestion.extraction import IMAGE_EXTENSIONS
 from sanad.rag.llm_client import LLMConnectionError, OllamaClient
@@ -429,7 +429,7 @@ def get_overview(doc_id: str, _user: str | None = Depends(require_user)):
 @app.post("/api/documents/{doc_id}/overview/job", status_code=202)
 def start_overview_job(doc_id: str, _user: str | None = Depends(require_user)):
     """Starts Contract Overview extraction in the background -- see
-    start_obligations_job() and sanad/jobs.py for why."""
+    start_obligations_job() and shared/jobs.py for why."""
     _get_record(doc_id, _user)
     job_id = jobs.submit("overview", lambda: _compute_overview(doc_id, _user))
     return {"job_id": job_id}
@@ -439,7 +439,7 @@ def start_overview_job(doc_id: str, _user: str | None = Depends(require_user)):
 def start_obligations_job(doc_id: str, _user: str | None = Depends(require_user)):
     """Starts obligation extraction in the background and returns
     immediately with a job_id -- poll GET /api/jobs/{job_id} for the
-    result. See sanad/jobs.py for why this exists: the synchronous
+    result. See shared/jobs.py for why this exists: the synchronous
     version above can block a browser tab for minutes."""
     _get_record(doc_id, _user)  # 404 fast, before handing work to a background thread
     job_id = jobs.submit("obligations", lambda: _compute_obligations(doc_id, _user))
@@ -449,7 +449,7 @@ def start_obligations_job(doc_id: str, _user: str | None = Depends(require_user)
 @app.post("/api/documents/{doc_id}/review/job", status_code=202)
 def start_review_job(doc_id: str, _user: str | None = Depends(require_user)):
     """Starts the Review synthesis in the background -- see
-    start_obligations_job() and sanad/jobs.py."""
+    start_obligations_job() and shared/jobs.py."""
     _get_record(doc_id, _user)
     job_id = jobs.submit("review", lambda: _compute_review(doc_id, _user))
     return {"job_id": job_id}

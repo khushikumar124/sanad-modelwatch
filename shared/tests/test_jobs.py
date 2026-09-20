@@ -1,9 +1,9 @@
-"""Tests for sanad/jobs.py's in-process background job manager."""
+"""Tests for shared/jobs.py's in-process background job manager."""
 import time
 
 import pytest
 
-from sanad.jobs import DONE, ERROR, JobManager, PENDING, RUNNING
+from shared.jobs import DONE, ERROR, JobManager, PENDING, RUNNING
 
 
 def _wait_until(predicate, timeout=2.0):

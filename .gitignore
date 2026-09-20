@@ -9,3 +9,11 @@ __pycache__/
 *chroma_db*/
 sanad_uploads/
 .env
+
+# The trained model itself is a regeneratable binary blob (`python -m
+# ml.train_risk_classifier` rebuilds it from ml/data/, which IS
+# committed) -- keeping it out of git avoids diffing a binary file for
+# no benefit. ml/data/*.jsonl and ml/artifacts/results.json are
+# committed on purpose: they're what makes docs/ml_experiment.md's
+# numbers directly reproducible/inspectable, not just asserted.
+ml/artifacts/*.joblib

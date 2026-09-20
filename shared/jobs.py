@@ -1,29 +1,35 @@
-"""In-process background job execution for slow, LLM-bound requests.
+"""In-process background job execution for slow, blocking work.
 
-Obligation extraction and the Review synthesis it feeds can take anywhere
-from ~10s to several minutes on a local model (see
-sanad/features/obligations.py's own docstring for measured numbers) --
-running that synchronously inside an HTTP request means the browser tab
-sits frozen the whole time, and a slow request risks hitting proxy/client
-timeouts entirely. This module lets a route hand the work to a thread
-pool and return a job_id immediately; the frontend polls
-GET /api/jobs/{job_id} until it's done.
+Originally lived at `sanad/jobs.py` for Sanad's own LLM-bound requests
+(obligation extraction and the Review synthesis it feeds can take
+anywhere from ~10s to several minutes on a local model -- running that
+synchronously inside an HTTP request means the browser tab sits frozen
+the whole time, and a slow request risks hitting proxy/client timeouts
+entirely). A route hands the work to a thread pool and returns a job_id
+immediately; the caller polls GET /api/jobs/{job_id} until it's done.
+
+Moved here because modelwatch/api/app.py's Drift Lab endpoints reuse the
+exact same class -- and it has zero Sanad-specific logic (stdlib only),
+so importing it from inside Sanad's package was a real, needless
+coupling: ModelWatch's own API could not even start without Sanad's
+package being importable, despite this class never touching anything
+Sanad-specific. This module has no product-specific logic at all; either
+app can depend on it without depending on the other.
 
 Deliberately a ThreadPoolExecutor, not Celery/Redis/RQ: the work here is
-blocking I/O (an HTTP call to Ollama), not CPU-bound, so a thread pool is
-sufficient, and it adds no new infrastructure to a project whose explicit
-design goal is staying local-first and single-process. This is the right
-tool for one process; the moment this needs to run across multiple
-worker processes or survive a process restart, swap this module for a
-real task queue (Celery+Redis, RQ, or Arq) -- the call sites
-(`submit_job` / `get_job`) are the seam to swap behind, not something
-that would need to change at every call site.
+blocking I/O (an HTTP call to a local model), not CPU-bound, so a thread
+pool is sufficient, and it adds no new infrastructure to either project's
+explicit design goal of staying local-first and single-process. This is
+the right tool for one process; the moment this needs to run across
+multiple worker processes or survive a process restart, swap this module
+for a real task queue (Celery+Redis, RQ, or Arq) -- the call sites
+(`submit` / `get`) are the seam to swap behind, not something that would
+need to change at every call site.
 
-Jobs are kept in memory, capped, and evicted oldest-first -- same
-philosophy as sanad/api/telemetry.py's bounded buffer: a long-running
-server shouldn't accumulate unbounded state, and a job's result only
-needs to survive long enough for the client that started it to poll for
-it.
+Jobs are kept in memory, capped, and evicted oldest-first -- a
+long-running server shouldn't accumulate unbounded state, and a job's
+result only needs to survive long enough for the client that started it
+to poll for it.
 """
 from __future__ import annotations
 
@@ -70,7 +76,7 @@ class Job:
 
 class JobManager:
     def __init__(self, max_workers: int = _MAX_WORKERS, max_jobs: int = _MAX_JOBS):
-        self._executor = ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="sanad-job")
+        self._executor = ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="job")
         self._jobs: "OrderedDict[str, Job]" = OrderedDict()
         self._lock = threading.Lock()
         self._max_jobs = max_jobs

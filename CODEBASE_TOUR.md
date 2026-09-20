@@ -178,6 +178,32 @@ Average several runs per check to lower the detector's noise floor; store
 the baseline's achieved quality so drift can be measured *relatively*
 instead of against a hand-set threshold; a bigger local model.
 
+**"Is there any actual deep learning in this project, or did you just
+train nothing?"**
+Say both halves. Sanad does real DL *inference* (a pretrained sentence-
+transformer for embeddings, a pretrained LLM for generation) — no model
+is trained from scratch anywhere in this repo. ModelWatch is deliberately
+*not* deep learning (`modelwatch/core/engine.py` imports no scipy/sklearn
+even; only its adapters do) — classical statistics, on purpose, so it can
+watch a model without loading one itself. The one place a real supervised
+model *is* trained and tested with a held-out split
+(`ml/train_risk_classifier.py`) is documented in
+`docs/ml_experiment.md`, and it's a negative result — with the ~10
+positive training examples this repo's sample contracts actually
+provide, the learned model is statistically identical to a majority-class
+baseline, checked across three different configurations. Reporting that
+plainly, with a diagnosis of why, is more defensible than a flattering
+number that doesn't hold up under a second look.
+
+**"You said ModelWatch is Sanad-independent — is it, really?"**
+It wasn't, technically, until this was caught: `modelwatch/api/app.py`
+had a hard top-level `from sanad.jobs import JobManager`, so ModelWatch's
+own API couldn't start without Sanad's package (and its full dependency
+list) being importable, despite that class being pure stdlib with zero
+Sanad-specific logic. Fixed by moving it to `shared/jobs.py`, a module
+neither app depends on the other to reach. Worth naming as an example of
+auditing your own claim and finding it wrong, not assuming it holds.
+
 ## Honest framing
 
 The strongest material is the limitations sections in both READMEs. They

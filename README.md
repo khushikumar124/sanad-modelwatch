@@ -2,7 +2,18 @@
 
 [![tests](https://github.com/khushikumar124/sanad-modelwatch/actions/workflows/tests.yml/badge.svg)](https://github.com/khushikumar124/sanad-modelwatch/actions/workflows/tests.yml)
 
-Two projects that show each other's failure modes.
+Two projects that show each other's failure modes — and, together, one
+answer to a real deployment problem: an LLM-powered app shipped without
+anything watching it for silent quality degradation is a real, recurring
+risk (a model swap, a prompt change, or a retrieval regression can make
+answers quietly worse with no error, no crash, nothing an uptime check
+would ever catch). Most teams either skip monitoring an LLM app entirely,
+or bolt on generic APM that has no concept of "did the answer actually
+degrade." This repo packages a concrete alternative: a real RAG app
+(Sanad) and a real, separately-reusable monitoring framework
+(ModelWatch) that watches it from day one — via `docker compose up`, one
+deployable unit, not two things you'd have to remember to wire together
+later. See [`docker-compose.yml`](docker-compose.yml) and "Ship it," below.
 
 **[Sanad](sanad/)** is a RAG app: upload a contract (PDF or scanned
 image), get a grounded summary, ask it questions, and get a rule-based
@@ -16,7 +27,27 @@ RAG pipeline — for silent quality degradation, using real statistical
 tests (KS, Wasserstein, PSI) rather than a hand-waved threshold. It
 never contains model-type-specific logic: it only talks to an adapter
 interface, and Sanad's chatbot is its first real integration, not a
-special case wired into the core.
+special case wired into the core. It also doesn't secretly need Sanad to
+even start — see [`shared/jobs.py`](shared/jobs.py)'s docstring for a
+real coupling bug in that claim that was found and fixed, not just
+asserted.
+
+### Is there deep learning here? Precisely, not loosely
+
+**Sanad performs real DL *inference*** — a pretrained sentence-transformer
+for embeddings and a pretrained LLM (via Ollama) for generation, in a
+genuine RAG pipeline (chunking, hybrid retrieval, grounding
+verification). **ModelWatch is deliberately *not* deep learning** — its
+core is classical statistics (KS test, Wasserstein distance, PSI,
+chi-square, a two-proportion z-test) and classical ML (TF-IDF + cosine
+similarity, PCA), specifically so it can watch a model without needing to
+load one itself; see `modelwatch/core/engine.py`'s own docstring, which
+states this as a design constraint, not an oversight. **No model in this
+repo is trained from scratch** — every LLM/embedding model is off-the-
+shelf, used purely for inference. The one place this repo does train and
+test a real supervised model — a clause-risk classifier — reports a
+negative result rather than a flattering one: see
+[`docs/ml_experiment.md`](docs/ml_experiment.md).
 
 Nothing here is fabricated. Every number in the docs below is measured,
 not aspirational — including the results that came out worse than
@@ -46,11 +77,30 @@ Tests need no servers running at all:
 python -m pytest -v
 ```
 
-489 tests, real end-to-end coverage (real HTTP servers via
+501 tests, real end-to-end coverage (real HTTP servers via
 `pytest-httpserver`, a real mocked S3 API via `moto`, and this session's
 work was also verified against an actual local Postgres instance) —
 mocking is used only where the alternative is calling a real network
 service.
+
+## Ship it
+
+```bash
+docker compose up --build
+```
+
+The novelty claim made concrete: one command builds and starts Ollama,
+ModelWatch, Sanad, *and* the telemetry reporter that feeds Sanad's real
+usage into ModelWatch's drift detection — the same architecture
+`./run.sh` runs locally, packaged as one deployable unit instead of four
+things a team has to remember to start (and wire together) themselves.
+First run pulls the default model (`phi3:3.8b`, ~2.3GB) into a named
+volume; every run after that is fast. See
+[`docker-compose.yml`](docker-compose.yml)'s own comments for
+configuration (a different model, turning auth on, wiping persisted
+data). CPU-only inference is exactly as slow as the local path — this
+doesn't fix that, it only fixes "how many steps does it take to run this
+somewhere that isn't my machine."
 
 - **[DEMO.md](DEMO.md)** — a runbook that's actually been executed top
   to bottom, for a live walkthrough.
@@ -110,6 +160,7 @@ and an explicit limitations section rather than hedged language:
 | [`docs/evaluation.md`](docs/evaluation.md) | Sanad's RAG evaluation dataset and scoring, and the CI-style quality gate it feeds |
 | [`docs/contract_intelligence.md`](docs/contract_intelligence.md) | Obligation extraction, coverage, contradictions, and review synthesis |
 | [`docs/research.md`](docs/research.md) | The hypotheses this codebase can actually test, what's been measured vs. not, and concrete next steps |
+| [`docs/ml_experiment.md`](docs/ml_experiment.md) | A real trained/tested supervised classifier experiment (clause risk severity) — a negative result, with a diagnosis of why and what would actually fix it |
 
 ## Honest framing
 

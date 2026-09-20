@@ -37,13 +37,16 @@ from modelwatch.core.engine import MonitoringEngine, ModelNotRegisteredError, Ru
 from modelwatch.core.storage import ModelAlreadyExistsError, ModelNotFoundError, Storage
 from modelwatch.diagnosis.trace_diagnosis import diagnose_trace
 
-# JobManager is a generic, Sanad-independent utility (in-process
+# JobManager is a generic, product-independent utility (in-process
 # ThreadPoolExecutor + polling) -- reused here rather than duplicated,
-# same principle as everywhere else in this codebase. Drift Lab needing
-# its own instance (not sanad.jobs.jobs, the module-level singleton
-# Sanad's own API uses) keeps the two apps' job queues from competing
-# for the same worker pool.
-from sanad.jobs import JobManager
+# same principle as everywhere else in this codebase. It used to live
+# inside sanad/, which meant ModelWatch's own API could not start
+# without Sanad's package being importable despite this class having no
+# Sanad-specific logic; it now lives in shared/, which neither app
+# depends on the other to reach. Drift Lab needing its own instance (not
+# shared.jobs.jobs, the module-level singleton Sanad's own API uses)
+# keeps the two apps' job queues from competing for the same worker pool.
+from shared.jobs import JobManager
 
 logging.basicConfig(
     level=getattr(logging, config.log_level, logging.INFO),

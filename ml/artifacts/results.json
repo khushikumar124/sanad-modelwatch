@@ -1,0 +1,213 @@
+{
+  "dataset": {
+    "path": "/Users/khushikumar/Desktop/SWE_PROJ/ml/data/clause_risk_dataset_v1.jsonl",
+    "n_total": 584,
+    "n_train": 438,
+    "n_test": 146,
+    "label_distribution": {
+      "none": 571,
+      "high": 7,
+      "medium": 4,
+      "low": 2
+    },
+    "binary_label_distribution": {
+      "none": 571,
+      "flagged": 13
+    },
+    "stratified_split": true
+  },
+  "model": {
+    "pipeline": "TfidfVectorizer(1-2 grams) + LogisticRegression(class_weight=balanced)",
+    "random_state": 0
+  },
+  "results": {
+    "learned_model": {
+      "labels": [
+        "none",
+        "high",
+        "low",
+        "medium"
+      ],
+      "confusion_matrix": [
+        [
+          143,
+          0,
+          0,
+          0
+        ],
+        [
+          2,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          1,
+          0,
+          0,
+          0
+        ]
+      ],
+      "macro_f1": 0.24740484429065743,
+      "per_class": {
+        "none": {
+          "precision": 0.9794520547945206,
+          "recall": 1.0,
+          "f1": 0.9896193771626297,
+          "support": 143.0
+        },
+        "high": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 2.0
+        },
+        "low": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 0.0
+        },
+        "medium": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 1.0
+        }
+      },
+      "accuracy": 0.9794520547945206
+    },
+    "majority_class_baseline": {
+      "labels": [
+        "none",
+        "high",
+        "low",
+        "medium"
+      ],
+      "confusion_matrix": [
+        [
+          143,
+          0,
+          0,
+          0
+        ],
+        [
+          2,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          1,
+          0,
+          0,
+          0
+        ]
+      ],
+      "macro_f1": 0.24740484429065743,
+      "per_class": {
+        "none": {
+          "precision": 0.9794520547945206,
+          "recall": 1.0,
+          "f1": 0.9896193771626297,
+          "support": 143.0
+        },
+        "high": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 2.0
+        },
+        "low": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 0.0
+        },
+        "medium": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 1.0
+        }
+      },
+      "accuracy": 0.9794520547945206
+    },
+    "learned_model_binary": {
+      "labels": [
+        "none",
+        "flagged"
+      ],
+      "confusion_matrix": [
+        [
+          143,
+          0
+        ],
+        [
+          3,
+          0
+        ]
+      ],
+      "macro_f1": 0.49480968858131485,
+      "per_class": {
+        "none": {
+          "precision": 0.9794520547945206,
+          "recall": 1.0,
+          "f1": 0.9896193771626297,
+          "support": 143.0
+        },
+        "flagged": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 3.0
+        }
+      },
+      "accuracy": 0.9794520547945206
+    },
+    "majority_class_baseline_binary": {
+      "labels": [
+        "none",
+        "flagged"
+      ],
+      "confusion_matrix": [
+        [
+          143,
+          0
+        ],
+        [
+          3,
+          0
+        ]
+      ],
+      "macro_f1": 0.49480968858131485,
+      "per_class": {
+        "none": {
+          "precision": 0.9794520547945206,
+          "recall": 1.0,
+          "f1": 0.9896193771626297,
+          "support": 143.0
+        },
+        "flagged": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 3.0
+        }
+      },
+      "accuracy": 0.9794520547945206
+    }
+  }
+}

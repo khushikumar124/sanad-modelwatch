@@ -1,0 +1,23 @@
+# Bare patterns like ".venv/" only match at the build context ROOT in
+# Docker's ignore semantics (unlike .gitignore, which matches at any
+# depth) -- a stray sanad/.venv/ (1.3GB, leftover from an early setup
+# mistake) slipped straight past the un-prefixed version of this file
+# and made every `docker compose build` transfer 100MB+ of build context
+# before stalling. Every directory pattern below is now "**/" prefixed
+# so it matches regardless of nesting.
+**/.venv/
+**/__pycache__/
+**/*.pyc
+**/*.egg-info/
+**/.pytest_cache/
+**/*.db
+**/.DS_Store
+**/*chroma_db*/
+**/sanad_uploads/
+**/node_modules/
+.env
+.git/
+.github/
+*.docx
+ml/data/
+ml/artifacts/

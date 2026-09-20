@@ -1,0 +1,7 @@
+# Kept separate from sanad/requirements.txt and modelwatch/requirements.txt
+# deliberately -- this is an offline experiment, not something either
+# running service imports, so neither app's dependency list (or Docker
+# image) should have to carry scikit-learn's weight just because this
+# script exists. See ml/README.md.
+scikit-learn>=1.9
+joblib>=1.4

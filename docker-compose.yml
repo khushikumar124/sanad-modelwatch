@@ -1,0 +1,146 @@
+# Ships Sanad + ModelWatch as one deployable unit: a contract-intelligence
+# RAG app with its own model-quality monitor wired in from the start,
+# rather than an LLM agent shipped to a client/dev team with nothing
+# watching it for silent degradation.
+#
+#   docker compose up --build
+#   open http://localhost:8100/   # Sanad
+#   open http://localhost:8000/dashboard/   # ModelWatch
+#
+#   docker compose down            # stop (keeps the named volumes)
+#   docker compose down -v         # stop and wipe all persisted data
+#
+# The default model is phi3:3.8b (~2.3GB) -- the model-init service pulls
+# it once into a shared volume the first time you run this; every
+# `compose up` after that is fast because the volume already has it.
+# Override with SANAD_OLLAMA_MODEL=llama3.2:3b (or any other Ollama model)
+# as an environment variable before running compose.
+#
+# CPU-only inference is slow (see the root README's known limitations) --
+# this compose file does not attempt to fix that; it packages the exact
+# same architecture ./run.sh runs locally; add a GPU runtime to the
+# `ollama` service yourself if your Docker host has one.
+
+services:
+  ollama:
+    image: ollama/ollama:latest
+    volumes:
+      - ollama_models:/root/.ollama
+    ports:
+      - "11434:11434"
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  # One-shot: pulls the configured model into the shared volume, then
+  # exits successfully. sanad's depends_on waits for that exit code
+  # before starting, so the app never receives a request before the
+  # model it needs actually exists.
+  model-init:
+    image: ollama/ollama:latest
+    depends_on:
+      ollama:
+        condition: service_healthy
+    environment:
+      OLLAMA_HOST: "ollama:11434"
+      MODEL: ${SANAD_OLLAMA_MODEL:-phi3:3.8b}
+    entrypoint: ["/bin/sh", "-c", "ollama pull \"$$MODEL\""]
+    volumes:
+      - ollama_models:/root/.ollama
+
+  modelwatch:
+    build:
+      context: .
+      dockerfile: modelwatch/Dockerfile
+    environment:
+      MODELWATCH_DB_PATH: /app/data/modelwatch.db
+      MODELWATCH_API_HOST: 0.0.0.0
+    volumes:
+      - modelwatch_data:/app/data
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/dashboard/"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+
+  sanad:
+    build:
+      context: .
+      dockerfile: sanad/Dockerfile
+    depends_on:
+      ollama:
+        condition: service_healthy
+      model-init:
+        condition: service_completed_successfully
+    environment:
+      SANAD_OLLAMA_BASE_URL: http://ollama:11434
+      SANAD_OLLAMA_MODEL: ${SANAD_OLLAMA_MODEL:-phi3:3.8b}
+      SANAD_UPLOAD_DIR: /app/data/sanad_uploads
+      SANAD_CHROMA_DB_PATH: /app/data/sanad_chroma_db
+      SANAD_DATABASE_URL: sqlite:////app/data/sanad_documents.db
+      # Auth is off by default here too, same reasoning as the local
+      # ./run.sh default: a first `docker compose up` should show a
+      # working app immediately, not a login screen with no account yet.
+      # Set these three to turn it on (see the root README's "Try it").
+      SANAD_AUTH_ENABLED: ${SANAD_AUTH_ENABLED:-false}
+      SANAD_SESSION_SECRET: ${SANAD_SESSION_SECRET:-}
+      SANAD_USERS: ${SANAD_USERS:-}
+    volumes:
+      - sanad_data:/app/data
+    ports:
+      - "8100:8100"
+
+  # The piece that makes the "shipped with monitoring built in" claim
+  # real rather than aspirational: without this running, Sanad and
+  # ModelWatch are just two containers that happen to be in the same
+  # compose file. This is what actually feeds Sanad's live usage into
+  # ModelWatch's drift detection -- see modelwatch/examples/telemetry_reporter.py.
+  telemetry-reporter:
+    build:
+      context: .
+      dockerfile: modelwatch/Dockerfile
+    depends_on:
+      sanad:
+        condition: service_healthy
+      modelwatch:
+        condition: service_healthy
+    environment:
+      # Needed only when SANAD_AUTH_ENABLED=true (Sanad's own auth
+      # gates /api/telemetry like every other route) -- see
+      # modelwatch/examples/telemetry_reporter.py's login_if_needed().
+      # Left empty by default, matching Sanad's own auth-off default;
+      # docker-compose.yml reads the same root .env ./run.sh does, so
+      # this mirrors that setup rather than needing separate config.
+      SANAD_REPORTER_USERNAME: ${SANAD_REPORTER_USERNAME:-}
+      SANAD_REPORTER_PASSWORD: ${SANAD_REPORTER_PASSWORD:-}
+    # This service is a polling script, not a server -- it inherits
+    # modelwatch/Dockerfile's image (to reuse the modelwatch package) but
+    # not what that image's HEALTHCHECK checks for, so disable it rather
+    # than report a misleading "unhealthy" for a container with nothing
+    # listening on any port.
+    healthcheck:
+      disable: true
+    command:
+      - python
+      - -u
+      - -m
+      - modelwatch.examples.telemetry_reporter
+      - --sanad-url
+      - http://sanad:8100
+      - --modelwatch-url
+      - http://modelwatch:8000
+      - --interval
+      - "15"
+      - --min-batch
+      - "5"
+
+volumes:
+  ollama_models:
+  sanad_data:
+  modelwatch_data:
