@@ -1,0 +1,397 @@
+{
+  "method": "sentence-embeddings (all-MiniLM-L6-v2) + leave-one-out cross-validation",
+  "dataset": {
+    "path": "/Users/khushikumar/Desktop/SWE_PROJ/ml/data/clause_risk_dataset_v1.jsonl",
+    "n_total": 584,
+    "label_distribution": {
+      "none": 571,
+      "high": 7,
+      "medium": 4,
+      "low": 2
+    },
+    "binary_label_distribution": {
+      "none": 571,
+      "flagged": 13
+    }
+  },
+  "results_4class": {
+    "logistic_regression": {
+      "labels": [
+        "none",
+        "high",
+        "low",
+        "medium"
+      ],
+      "confusion_matrix": [
+        [
+          537,
+          13,
+          8,
+          13
+        ],
+        [
+          5,
+          2,
+          0,
+          0
+        ],
+        [
+          2,
+          0,
+          0,
+          0
+        ],
+        [
+          3,
+          0,
+          0,
+          1
+        ]
+      ],
+      "macro_f1": 0.313393325021232,
+      "per_class": {
+        "none": {
+          "precision": 0.9817184643510055,
+          "recall": 0.9404553415061296,
+          "f1": 0.960644007155635,
+          "support": 571.0
+        },
+        "high": {
+          "precision": 0.13333333333333333,
+          "recall": 0.2857142857142857,
+          "f1": 0.18181818181818182,
+          "support": 7.0
+        },
+        "low": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 2.0
+        },
+        "medium": {
+          "precision": 0.07142857142857142,
+          "recall": 0.25,
+          "f1": 0.1111111111111111,
+          "support": 4.0
+        }
+      },
+      "accuracy": 0.9246575342465754
+    },
+    "1nn": {
+      "labels": [
+        "none",
+        "high",
+        "low",
+        "medium"
+      ],
+      "confusion_matrix": [
+        [
+          563,
+          2,
+          1,
+          5
+        ],
+        [
+          5,
+          2,
+          0,
+          0
+        ],
+        [
+          2,
+          0,
+          0,
+          0
+        ],
+        [
+          4,
+          0,
+          0,
+          0
+        ]
+      ],
+      "macro_f1": 0.3367606192933704,
+      "per_class": {
+        "none": {
+          "precision": 0.980836236933798,
+          "recall": 0.9859894921190894,
+          "f1": 0.9834061135371179,
+          "support": 571.0
+        },
+        "high": {
+          "precision": 0.5,
+          "recall": 0.2857142857142857,
+          "f1": 0.36363636363636365,
+          "support": 7.0
+        },
+        "low": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 2.0
+        },
+        "medium": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 4.0
+        }
+      },
+      "accuracy": 0.9674657534246576
+    },
+    "5nn_distance_weighted": {
+      "labels": [
+        "none",
+        "high",
+        "low",
+        "medium"
+      ],
+      "confusion_matrix": [
+        [
+          571,
+          0,
+          0,
+          0
+        ],
+        [
+          7,
+          0,
+          0,
+          0
+        ],
+        [
+          2,
+          0,
+          0,
+          0
+        ],
+        [
+          4,
+          0,
+          0,
+          0
+        ]
+      ],
+      "macro_f1": 0.24718614718614718,
+      "per_class": {
+        "none": {
+          "precision": 0.9777397260273972,
+          "recall": 1.0,
+          "f1": 0.9887445887445887,
+          "support": 571.0
+        },
+        "high": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 7.0
+        },
+        "low": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 2.0
+        },
+        "medium": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 4.0
+        }
+      },
+      "accuracy": 0.9777397260273972
+    },
+    "majority_class_baseline": {
+      "labels": [
+        "none",
+        "high",
+        "low",
+        "medium"
+      ],
+      "confusion_matrix": [
+        [
+          571,
+          0,
+          0,
+          0
+        ],
+        [
+          7,
+          0,
+          0,
+          0
+        ],
+        [
+          2,
+          0,
+          0,
+          0
+        ],
+        [
+          4,
+          0,
+          0,
+          0
+        ]
+      ],
+      "macro_f1": 0.24718614718614718,
+      "per_class": {
+        "none": {
+          "precision": 0.9777397260273972,
+          "recall": 1.0,
+          "f1": 0.9887445887445887,
+          "support": 571.0
+        },
+        "high": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 7.0
+        },
+        "low": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 2.0
+        },
+        "medium": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 4.0
+        }
+      },
+      "accuracy": 0.9777397260273972
+    }
+  },
+  "results_binary": {
+    "logistic_regression": {
+      "labels": [
+        "none",
+        "flagged"
+      ],
+      "confusion_matrix": [
+        [
+          534,
+          37
+        ],
+        [
+          5,
+          8
+        ]
+      ],
+      "macro_f1": 0.6190121155638397,
+      "per_class": {
+        "none": {
+          "precision": 0.9907235621521335,
+          "recall": 0.9352014010507881,
+          "f1": 0.9621621621621622,
+          "support": 571.0
+        },
+        "flagged": {
+          "precision": 0.17777777777777778,
+          "recall": 0.6153846153846154,
+          "f1": 0.27586206896551724,
+          "support": 13.0
+        }
+      },
+      "accuracy": 0.928082191780822
+    },
+    "1nn": {
+      "labels": [
+        "none",
+        "flagged"
+      ],
+      "confusion_matrix": [
+        [
+          563,
+          8
+        ],
+        [
+          11,
+          2
+        ]
+      ],
+      "macro_f1": 0.5786595785076893,
+      "per_class": {
+        "none": {
+          "precision": 0.980836236933798,
+          "recall": 0.9859894921190894,
+          "f1": 0.9834061135371179,
+          "support": 571.0
+        },
+        "flagged": {
+          "precision": 0.2,
+          "recall": 0.15384615384615385,
+          "f1": 0.17391304347826086,
+          "support": 13.0
+        }
+      },
+      "accuracy": 0.9674657534246576
+    },
+    "5nn_distance_weighted": {
+      "labels": [
+        "none",
+        "flagged"
+      ],
+      "confusion_matrix": [
+        [
+          571,
+          0
+        ],
+        [
+          13,
+          0
+        ]
+      ],
+      "macro_f1": 0.49437229437229435,
+      "per_class": {
+        "none": {
+          "precision": 0.9777397260273972,
+          "recall": 1.0,
+          "f1": 0.9887445887445887,
+          "support": 571.0
+        },
+        "flagged": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 13.0
+        }
+      },
+      "accuracy": 0.9777397260273972
+    },
+    "majority_class_baseline": {
+      "labels": [
+        "none",
+        "flagged"
+      ],
+      "confusion_matrix": [
+        [
+          571,
+          0
+        ],
+        [
+          13,
+          0
+        ]
+      ],
+      "macro_f1": 0.49437229437229435,
+      "per_class": {
+        "none": {
+          "precision": 0.9777397260273972,
+          "recall": 1.0,
+          "f1": 0.9887445887445887,
+          "support": 571.0
+        },
+        "flagged": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 13.0
+        }
+      },
+      "accuracy": 0.9777397260273972
+    }
+  }
+}

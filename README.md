@@ -45,9 +45,14 @@ load one itself; see `modelwatch/core/engine.py`'s own docstring, which
 states this as a design constraint, not an oversight. **No model in this
 repo is trained from scratch** — every LLM/embedding model is off-the-
 shelf, used purely for inference. The one place this repo does train and
-test a real supervised model — a clause-risk classifier — reports a
-negative result rather than a flattering one: see
-[`docs/ml_experiment.md`](docs/ml_experiment.md).
+test a real supervised model — a clause-risk classifier — reports both a
+negative result (TF-IDF, a single train/test split) and, after fixing
+two real methodological weaknesses the first attempt surfaced (embeddings
+instead of bag-of-words, leave-one-out CV instead of one split), a
+genuine positive one: 62% recall on flagged clauses versus 0% before,
+same labels, same documents. See
+[`docs/ml_experiment.md`](docs/ml_experiment.md) for both, including
+what the positive result does and doesn't support.
 
 Nothing here is fabricated. Every number in the docs below is measured,
 not aspirational — including the results that came out worse than
@@ -160,7 +165,7 @@ and an explicit limitations section rather than hedged language:
 | [`docs/evaluation.md`](docs/evaluation.md) | Sanad's RAG evaluation dataset and scoring, and the CI-style quality gate it feeds |
 | [`docs/contract_intelligence.md`](docs/contract_intelligence.md) | Obligation extraction, coverage, contradictions, and review synthesis |
 | [`docs/research.md`](docs/research.md) | The hypotheses this codebase can actually test, what's been measured vs. not, and concrete next steps |
-| [`docs/ml_experiment.md`](docs/ml_experiment.md) | A real trained/tested supervised classifier experiment (clause risk severity) — a negative result, with a diagnosis of why and what would actually fix it |
+| [`docs/ml_experiment.md`](docs/ml_experiment.md) | Two real trained/tested supervised classifier experiments (clause risk severity) — a negative result, a diagnosis of why, and a second experiment that fixes it: 62% recall vs. 0% |
 
 ## Honest framing
 

@@ -26,7 +26,17 @@ class Embedder:
     def model(self) -> SentenceTransformer:
         if self._model is None:
             logger.info("loading embedding model", extra={"model": self.model_name})
-            self._model = SentenceTransformer(self.model_name)
+            # Pinned to CPU deliberately. A newer sentence-transformers
+            # release started auto-selecting "mps" (Apple Silicon's GPU
+            # backend) whenever it's available, which this module's own
+            # docstring never intended -- and it's not just a slower
+            # choice: MPS initialized inside a forked worker process
+            # (which sentence-transformers/chromadb spin up internally
+            # for batch encoding) crashes the whole server with no
+            # Python traceback at all, a real bug this caused during a
+            # live demo run. all-MiniLM-L6-v2 is small enough that CPU
+            # was always the intended, and only verified, target.
+            self._model = SentenceTransformer(self.model_name, device="cpu")
         return self._model
 
     def embed(self, texts: list[str]) -> list[list[float]]:

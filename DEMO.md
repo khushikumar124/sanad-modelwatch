@@ -105,21 +105,69 @@ has no model-type branching. It only calls `build_baseline` / `check_drift`
 on the `ModelAdapter` interface. Same engine, same dashboard, for a tabular
 classifier and for an LLM chatbot.
 
-## 4. The drift story (optional — 8 min, only if time)
+## 4. The drift story — the real answer to "does ModelWatch actually work?"
+
+**Not optional — lead with this if the question "how do you know ModelWatch
+detects real degradation" comes up.** This is a controlled experiment, not a
+staged number: it makes Sanad genuinely worse (swaps its live model), proves
+ModelWatch catches it, then proves it recovers.
 
 ```bash
 source .venv/bin/activate && python -m modelwatch.examples.simulate_drift_demo --drift-model qwen2.5:0.5b --limit 5
 ```
 
-Measured result at the default threshold:
+Have `http://localhost:8000/dashboard/` open in a tab, model picker set to
+**"Sanad RAG Chatbot · llm"** (not "Sanad Chatbot (live traffic)" — that's a
+different model, fed by real usage, not this controlled run). Run the command,
+then refresh the dashboard:
 
-| step | quality | drifted | alerts |
-|---|---|---|---|
-| baseline (phi3:3.8b) | 0.558 | no | 0 |
-| swapped to qwen2.5:0.5b | **0.261** | **yes** | 1 |
-| after retrain, back on phi3 | 0.517 | no | 0 |
+| step | quality | drift score | status | open alerts |
+|---|---|---|---|---|
+| 1. baseline (phi3:3.8b) | ~0.50 | ~0.49 | Healthy | 0 |
+| 2. swapped to qwen2.5:0.5b | **~0.14** | **~0.87** | **Degraded — drift detected** | **1** |
+| 4. retrain (swap back to phi3, reset baseline) | — | — | version bumps v1→v2 | alert resolved |
+| 5. follow-up confirms recovery | ~0.50 | ~0.50 | Healthy | 0 |
 
-If short on time, show this table instead of running it live.
+(Exact numbers vary run to run — local model sampling isn't deterministic —
+but the *shape*, a sharp quality drop crossing the 0.35 alert threshold and a
+clean recovery, has been reproduced multiple times.)
+
+What to actually show on stage, in order:
+1. **Overview page**, model = sanad-chatbot, after step 2: the red "Degraded —
+   drift detected" banner, and the Quality & Drift chart's dashed alert-
+   threshold line being crossed — this is the single clearest visual in the
+   whole project.
+2. **Active Incidents**: the alert, then empty again after the retrain step —
+   proves detection *and* resolution, not just detection.
+3. **Models & Versions**: `sanad-chatbot`'s version history shows `v1 → v2`
+   with reason `retrain` and a real timestamp — a persisted record, not a
+   toast that already disappeared.
+
+If short on time, show the table above instead of running it live — but
+running it live is the stronger claim, and it now reliably works (see
+gotchas below).
+
+### Gotchas that will bite you if you skip this section
+
+- **Auth must be off** for the script to reach Sanad (`session.get`/`post`
+  calls in `sanad_golden_set_runner.py` don't log in). If your `.env` has
+  `SANAD_AUTH_ENABLED=true`, temporarily `mv .env .env.bak`, `./run.sh
+  --stop && ./run.sh`, run the demo, then `mv .env.bak .env` and restart
+  again afterward.
+- **Close other memory-heavy apps first** (other Claude Code sessions,
+  Chrome with many tabs, etc.). This script loads sentence-transformers,
+  ChromaDB, and calls a local LLM all at once — under severe memory
+  pressure, Sanad's process can be killed outright mid-request. Check
+  `memory_pressure` if anything seems to hang; a few hundred MB free is
+  enough.
+- **If Sanad crashes with no error message at all** (the process just
+  disappears), check `~/Library/Logs/DiagnosticReports/Python-*.ips` for a
+  `SIGSEGV` inside `chromadb_rust_bindings.abi3.so`. This happened once
+  during real testing — root cause was a `sanad_chroma_db` left in a bad
+  state by an earlier crashed run, not this script. Fix: stop the app,
+  move `sanad_chroma_db` and `sanad_documents.db` aside (they're
+  regenerable local data, not source), restart. Should not recur on a
+  vector store that's never been through a mid-write crash.
 
 ## Verified demo questions
 

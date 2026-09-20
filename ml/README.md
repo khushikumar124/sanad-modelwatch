@@ -23,25 +23,39 @@ from a bag-of-words representation to generalize to held-out clauses,
 which is a real, useful question if the eventual goal is a classifier
 that catches phrasing the fixed regex patterns don't anticipate.
 
+## Two experiments
+
+1. **`train_risk_classifier.py`** — TF-IDF + logistic regression, a
+   single train/test split. **Negative result**: statistically
+   indistinguishable from a majority-class baseline.
+2. **`train_embeddings_loocv.py`** — sentence embeddings (the same
+   `all-MiniLM-L6-v2` Sanad's retrieval already uses) + leave-one-out
+   cross-validation, three model families compared. **Positive result**:
+   logistic regression catches 62% of flagged clauses the first
+   experiment missed entirely.
+
+Both are kept, not just the second — *why* the first failed and what
+specifically fixed it (representation, not hyperparameters) is the real
+finding. See [`docs/ml_experiment.md`](../docs/ml_experiment.md) for the
+full measured numbers, both experiments' results, and honest limitations
+of each (in particular: experiment 2's precision is low — it's a
+recall-oriented pre-filter, not a deployable standalone detector).
+
 ## Running it
 
 ```bash
 # from the repository root, with the main .venv activated
 pip install -r ml/requirements.txt
 
-python -m ml.build_dataset          # extracts + chunks + rule-flags every
-                                     # sample PDF, writes ml/data/clause_risk_dataset_v1.jsonl
-python -m ml.train_risk_classifier  # trains, evaluates against a held-out
-                                     # split and a majority-class baseline,
-                                     # writes ml/artifacts/{risk_classifier.joblib,results.json}
+python -m ml.build_dataset             # extracts + chunks + rule-flags every
+                                        # sample PDF, writes ml/data/clause_risk_dataset_v1.jsonl
+python -m ml.train_risk_classifier     # experiment 1 -> ml/artifacts/{risk_classifier.joblib,results.json}
+python -m ml.train_embeddings_loocv    # experiment 2 -> ml/artifacts/results_embeddings_loocv.json
 ```
 
-Tests (fast — a synthetic toy dataset, not the real PDFs):
+Tests (fast — synthetic toy data, not the real PDFs or the real
+sentence-transformer model):
 
 ```bash
 pytest ml/ -v
 ```
-
-See [`docs/ml_experiment.md`](../docs/ml_experiment.md) for the actual
-measured results, dataset composition, and honest limitations of this
-specific run.

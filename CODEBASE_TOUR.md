@@ -186,14 +186,22 @@ is trained from scratch anywhere in this repo. ModelWatch is deliberately
 *not* deep learning (`modelwatch/core/engine.py` imports no scipy/sklearn
 even; only its adapters do) — classical statistics, on purpose, so it can
 watch a model without loading one itself. The one place a real supervised
-model *is* trained and tested with a held-out split
-(`ml/train_risk_classifier.py`) is documented in
-`docs/ml_experiment.md`, and it's a negative result — with the ~10
-positive training examples this repo's sample contracts actually
-provide, the learned model is statistically identical to a majority-class
-baseline, checked across three different configurations. Reporting that
-plainly, with a diagnosis of why, is more defensible than a flattering
-number that doesn't hold up under a second look.
+model *is* trained and tested with a held-out procedure is `ml/`, and
+it's genuinely two experiments, documented in `docs/ml_experiment.md`.
+The first (`train_risk_classifier.py`: TF-IDF, one 75/25 split) is a
+negative result — with only ~10 positive training examples this repo's
+sample contracts provide, the model is statistically identical to a
+majority-class baseline, checked across three configurations. Rather
+than stopping there, the second (`train_embeddings_loocv.py`: sentence
+embeddings, leave-one-out CV) fixes the two things actually holding the
+first one back — representation and evaluation efficiency, not a
+retrained-until-lucky number — and gets a real positive result: 62%
+recall on flagged clauses vs. 0% before, same labels, same documents.
+Precision is still low (0.18), so it's a recall-oriented pre-filter, not
+a deployable detector — say that unprompted, don't wait to be asked.
+Reporting both experiments, and being precise about what the second one
+does and doesn't prove, is more defensible than either a flattering
+number alone or stopping at the first negative one.
 
 **"You said ModelWatch is Sanad-independent — is it, really?"**
 It wasn't, technically, until this was caught: `modelwatch/api/app.py`

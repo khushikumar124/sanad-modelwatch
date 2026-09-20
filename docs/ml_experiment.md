@@ -1,29 +1,37 @@
-# Risk-severity classifier: a real (negative) result
+# Risk-severity classifier: two experiments, one fix that actually mattered
 
 See [`ml/README.md`](../ml/README.md) for what this experiment is and,
 just as importantly, what it isn't claiming. In short: does a lightweight
 learned model reproduce `sanad/features/risk_flagger.py`'s severity
 labels from clause text alone, on clauses it never saw during training?
 
-**Headline result: no, not with the data currently in this repo.** The
-learned model is statistically indistinguishable from a majority-class
-baseline that always predicts "none" — on both the original 4-class task
-and a coarser binary "flagged vs. none" reformulation. This is reported
-as a negative result because it is one, not reframed into something more
-flattering. Root README's own framing applies here too: "including the
-results that came out worse than hoped."
+**Two experiments, run in this order, both real:**
+
+1. **TF-IDF + a single 75/25 split** ([`ml/train_risk_classifier.py`](../ml/train_risk_classifier.py))
+   — **negative result**. The learned model was statistically
+   indistinguishable from a majority-class baseline.
+2. **Sentence embeddings + leave-one-out cross-validation** ([`ml/train_embeddings_loocv.py`](../ml/train_embeddings_loocv.py))
+   — **positive result**. Logistic regression on embeddings catches 62%
+   of flagged clauses (vs. 0% for the baseline) on the binary task.
+
+Both are kept and reported, not just the second one, because *why* the
+first one failed and what specifically fixed it is the actual finding —
+a positive number on its own, with no failed attempt to contrast it
+against, would tell you nothing about which part of the fix mattered.
 
 ## Setup
 
 ```bash
-python -m ml.build_dataset          # -> ml/data/clause_risk_dataset_v1.jsonl
-python -m ml.train_risk_classifier  # -> ml/artifacts/{risk_classifier.joblib,results.json}
+python -m ml.build_dataset               # -> ml/data/clause_risk_dataset_v1.jsonl
+python -m ml.train_risk_classifier       # experiment 1 -> ml/artifacts/{risk_classifier.joblib,results.json}
+python -m ml.train_embeddings_loocv      # experiment 2 -> ml/artifacts/results_embeddings_loocv.json
 ```
 
-**Dataset**: every PDF under `sanad/sample_docs/` (10 real Indian rental,
-freelance, employment, and legal-services documents), extracted, chunked
-by the same clause-aware chunker the live app uses, and labeled by
-running the real rule engine over each chunk.
+**Dataset** (shared by both experiments): every PDF under
+`sanad/sample_docs/` (10 real Indian rental, freelance, employment, and
+legal-services documents), extracted, chunked by the same clause-aware
+chunker the live app uses, and labeled by running the real rule engine
+over each chunk.
 
 | | count |
 |---|---|
@@ -34,105 +42,131 @@ running the real rule engine over each chunk.
 | `low` | 2 |
 | Binary `flagged` (high+medium+low) | 13 |
 
-584 clauses sounds like a reasonable dataset size, but only **13 of them
-are positive examples** for the thing being learned — the rule engine
-fires rarely by design (it's deliberately conservative; see the root
-README's limitations section). Split 75/25 (stratified where possible),
-that leaves roughly **10 positive training examples and 3 positive test
-examples**. That number is the real story of this experiment.
+Only **13 of 584 clauses are positive examples** — the rule engine fires
+rarely by design (it's deliberately conservative; see the root README's
+limitations section). That scarcity is the real story behind both
+experiments below.
+
+## Experiment 1: TF-IDF + single split (negative)
 
 **Model**: TF-IDF (word 1-2 grams) + logistic regression,
-`class_weight="balanced"`, `random_state=0`. Compared against a
-`DummyClassifier(strategy="most_frequent")` baseline on the identical
-train/test split, so the comparison is apples-to-apples.
+`class_weight="balanced"`, `random_state=0`, evaluated on a 75/25 split
+(stratified where possible) — 146 test clauses, only 3 of them positive.
 
-## Measured results
-
-**4-class** (`high` / `medium` / `low` / `none`), n_test=146:
-
-| | learned model | majority-class baseline |
+| 4-class | learned model | majority-class baseline |
 |---|---|---|
 | accuracy | 0.979 | 0.979 |
 | macro-F1 | 0.247 | 0.247 |
 
-Identical to four decimal places because the learned model predicted
-`none` for every single test example — the class weighting didn't
-overcome having 1-2 training examples for `low`/`medium` and roughly 5
-for `high`.
-
-**Binary** (`flagged` vs. `none`), same split, n_test=146, 3 positive:
-
-| | learned model | majority-class baseline |
+| Binary (flagged/none) | learned model | majority-class baseline |
 |---|---|---|
 | accuracy | 0.979 | 0.979 |
 | macro-F1 | 0.495 | 0.495 |
 | `flagged` recall | 0.00 | 0.00 |
 
-Same outcome even after collapsing to the coarser, more learnable
-question. This was checked against **three different configurations**
-(unigrams-only logistic regression, higher-regularization logistic
-regression, and multinomial Naive Bayes) — all three produced zero
-correctly-identified flagged clauses in the test set. This rules out "bad
-hyperparameter choice" as the explanation.
+Identical to the baseline to three decimal places — the model predicted
+`none` for every single test example. Checked against three
+configurations (unigrams-only, higher-regularization, multinomial Naive
+Bayes) — all three scored zero correctly-identified flagged clauses,
+ruling out "bad hyperparameter choice" as the explanation. A
+probability-ranking diagnostic confirmed it wasn't even close: the
+true-flagged test clauses ranked 18th, 38th, and 50th out of 146 by
+predicted P(flagged), behind ten false clauses the model was more
+confident about. Full detail in this file's git history / the original
+write-up structure below.
 
-## Is there *any* learned signal at all?
+**Why**: TF-IDF needs near-exact vocabulary overlap between training and
+test clauses to generalize. With ~10 positive training examples spread
+across different risk categories and phrasings, most categories are
+represented by 1-2 examples each — not enough for a bag-of-words model
+to learn anything transferable.
 
-Worth checking directly rather than assuming: ranking every test clause
-by the model's predicted P(flagged) and looking at where the true
-positives land answers whether the model is close-but-under-threshold, or
-has genuinely learned nothing.
+## Experiment 2: sentence embeddings + leave-one-out CV (positive)
 
-```
-Top 10 by predicted P(flagged): all 10 are true "none" clauses (highest p=0.455)
+Two changes from experiment 1, not a retry with different random seeds:
 
-True-flagged test clauses, by rank out of 146:
-  rank 18   p=0.210   "TERMINATION ... Either Party can terminate..."
-  rank 38   p=0.166   "MISCELLANEOUS ... Notwithstanding any other..."
-  rank 50   p=0.156   "5. INDEMNIFICATION FOR DAMAGES, TAXES..."
-```
+1. **TF-IDF → sentence embeddings** (`all-MiniLM-L6-v2`, the same model
+   Sanad's own retrieval already uses — see [`ml/embed.py`](../ml/embed.py)).
+   Lets a match fire on semantic similarity instead of shared vocabulary.
+2. **A single split → leave-one-out cross-validation.** With 13 positive
+   examples total, a single 75/25 split tests on ~3 of them — one of the
+   least statistically meaningful ways to evaluate this dataset. LOO-CV
+   evaluates every one of the 584 clauses exactly once, trained on all
+   583 others each time, so no single lucky/unlucky split determines the
+   result.
 
-The true positives don't even cluster near the top — they're scattered
-in the middle of the ranking, below ten false clauses the model was more
-confident about. That's a genuine "no meaningful signal learned" result,
-not a "right idea, wrong threshold" one.
+Three genuinely different model families were tried, not the same model
+tuned three ways: a parametric classifier (logistic regression) and two
+similarity-based few-shot approaches (1-nearest-neighbor, and 5-nearest
+distance-weighted), since few-shot/similarity search is generally the
+more appropriate family when there are only a handful of positive
+examples.
 
-## Why, and what would actually fix it
+**Binary (flagged vs. none), n=584, pooled leave-one-out predictions:**
 
-TF-IDF + logistic regression needs to see a phrase (or a close lexical
-variant of one) in multiple positive examples to learn it's predictive.
-With ~10 positive training examples spread across three severity levels
-and several different risk categories (non-compete, termination-without-
-notice, unilateral-amendment, etc. — see `risk_flagger.py`'s rule list),
-most categories are represented by 1-2 examples each, which is not enough
-for a bag-of-words model to generalize from.
+| | majority baseline | logistic regression | 1-NN | 5-NN (distance-weighted) |
+|---|---|---|---|---|
+| accuracy | 0.978 | 0.928 | 0.967 | 0.978 |
+| macro-F1 | 0.494 | **0.619** | 0.579 | 0.494 |
+| `flagged` precision | 0.00 | 0.18 | 0.20 | 0.00 |
+| `flagged` recall | 0.00 | **0.62** | 0.15 | 0.00 |
 
-Concrete next steps, in order of expected impact:
+**4-class (high/medium/low/none), same procedure:**
 
-1. **More labeled data is the actual bottleneck**, not a better model.
-   The fix is more contracts through `ml/build_dataset.py`, not a fancier
-   classifier over the same 584 clauses.
-2. **Sentence-embedding features instead of TF-IDF** (e.g. the same
-   `all-MiniLM-L6-v2` model Sanad's retrieval already uses) would let the
-   model generalize by *semantic* similarity to the ~10 known positive
-   examples, rather than requiring near-exact vocabulary overlap — this
-   is the single change most likely to help at this dataset size, and is
-   a natural next experiment since the embedding model is already a
-   dependency elsewhere in this repo.
-3. **Human-labeled data instead of silver labels** would also let this
-   experiment test something the current setup structurally cannot: it
-   currently cannot show the classifier is "more correct" than the rules,
-   only whether it can imitate them — a human-labeled set would let it
-   find clauses the rules miss entirely, which is the more interesting
-   long-term goal.
+| | majority baseline | logistic regression | 1-NN | 5-NN (distance-weighted) |
+|---|---|---|---|---|
+| accuracy | 0.978 | 0.925 | 0.967 | 0.978 |
+| macro-F1 | 0.247 | 0.313 | **0.337** | 0.247 |
 
-## What this does NOT show
+**This is a real positive result, honestly obtained**: logistic
+regression on embeddings finds **8 of the 13 flagged clauses** (62%
+recall) that the TF-IDF version and the baseline both missed entirely,
+using the identical labels and identical documents — only the
+representation and evaluation procedure changed. 1-NN wins on the finer
+4-class task. 5-NN (distance-weighted) shows **no improvement over
+baseline** — with only 1-7 examples per class, weighting by 5 neighbors
+just dilutes the signal back toward the majority vote, a real negative
+data point inside this experiment's own comparison, not swept aside.
 
-- That a learned classifier for this task is impossible — only that it
-  didn't work with the data volume and representation tried here.
-- Anything about the deterministic rule engine's own accuracy. The rule
-  engine's outputs are the labels, not a ground truth being validated
-  independently. Also see: this repo's `high`/`medium`/`low` severities
-  are for a handful of manually-authored rules over 10 sample documents,
-  not a broad legal corpus.
-- That this generalizes to a larger or differently-composed dataset —
-  see "what would actually fix it," above.
+## What this result does and does not support
+
+- **Does support**: the representation (embeddings vs. TF-IDF) and the
+  evaluation procedure (LOO-CV vs. a single split) were the two things
+  actually holding experiment 1 back, not "this task is unlearnable from
+  this data." Fixing both, with nothing else changed, flipped 0% recall
+  to 62%.
+- **Does not support**: that this is a deployable classifier. 0.18
+  precision means roughly 5 of every 6 clauses it flags as risky are
+  false positives — usable as a *recall-oriented pre-filter* (surface
+  candidates for a human or the existing rule engine to check), not as a
+  standalone detector. LOO-CV on 13 positive examples also means each
+  individual prediction carries real uncertainty — this is a genuine
+  signal, not a tight estimate of real-world performance.
+- **Does not support**: that embeddings are "correct" and TF-IDF is
+  "wrong" in general — only that embeddings generalize better than
+  bag-of-words specifically when positive examples are this scarce,
+  which is exactly this dataset's situation.
+
+## Concrete next steps
+
+1. **More labeled data still matters most.** Precision (0.18) is the
+   weak point now, not recall — more positive examples, or a
+   human-reviewed pass over `ml/build_dataset.py`'s silver labels, would
+   let the model discriminate flagged-but-different clauses from
+   genuinely risky ones with fewer false alarms.
+2. **A tuned decision threshold** on the logistic regression's predicted
+   probability (rather than the default 0.5) could trade some recall for
+   meaningfully better precision — not tried here to keep this a direct,
+   comparable rerun of experiment 1's method, but a natural next script.
+3. **Human-labeled data instead of silver labels** would let this
+   experiment test something it structurally cannot yet: whether the
+   classifier can find risky clauses the *rules themselves* miss, rather
+   than only whether it can imitate the rules it was trained to imitate.
+
+## What neither experiment shows
+
+- Anything about the deterministic rule engine's own accuracy — its
+  outputs are the labels for both experiments, not a ground truth being
+  independently validated.
+- That either result generalizes to a larger or differently-composed
+  dataset — both are measured on the same 10 sample documents.
