@@ -1,11 +1,11 @@
-# Risk-severity classifier: two experiments, one fix that actually mattered
+# Risk-severity classifier: three experiments, one fix that actually mattered
 
 See [`ml/README.md`](../ml/README.md) for what this experiment is and,
 just as importantly, what it isn't claiming. In short: does a lightweight
 learned model reproduce `sanad/features/risk_flagger.py`'s severity
 labels from clause text alone, on clauses it never saw during training?
 
-**Two experiments, run in this order, both real:**
+**Three experiments, run in this order, all real:**
 
 1. **TF-IDF + a single 75/25 split** ([`ml/train_risk_classifier.py`](../ml/train_risk_classifier.py))
    — **negative result**. The learned model was statistically
@@ -13,11 +13,18 @@ labels from clause text alone, on clauses it never saw during training?
 2. **Sentence embeddings + leave-one-out cross-validation** ([`ml/train_embeddings_loocv.py`](../ml/train_embeddings_loocv.py))
    — **positive result**. Logistic regression on embeddings catches 62%
    of flagged clauses (vs. 0% for the baseline) on the binary task.
+3. **Threshold tuning on experiment 2's own probabilities** ([`ml/threshold_tuning.py`](../ml/threshold_tuning.py))
+   — asks whether precision (0.18 in experiment 2) can be improved for
+   free, just by moving the decision cutoff. **Negative result**: 0.5
+   turns out to already be close to the best F1 available on this data:
+   raising the threshold barely moves precision while recall collapses.
 
-Both are kept and reported, not just the second one, because *why* the
-first one failed and what specifically fixed it is the actual finding —
-a positive number on its own, with no failed attempt to contrast it
-against, would tell you nothing about which part of the fix mattered.
+All three are kept and reported, not just the flattering one, because
+*why* the first one failed and what specifically fixed it is the actual
+finding — a positive number on its own, with no failed attempt to
+contrast it against, would tell you nothing about which part of the fix
+mattered. Same reasoning for keeping experiment 3's negative result
+rather than quietly dropping the script that didn't help.
 
 ## Setup
 
@@ -25,9 +32,10 @@ against, would tell you nothing about which part of the fix mattered.
 python -m ml.build_dataset               # -> ml/data/clause_risk_dataset_v1.jsonl
 python -m ml.train_risk_classifier       # experiment 1 -> ml/artifacts/{risk_classifier.joblib,results.json}
 python -m ml.train_embeddings_loocv      # experiment 2 -> ml/artifacts/results_embeddings_loocv.json
+python -m ml.threshold_tuning            # experiment 3 -> ml/artifacts/results_threshold_sweep.json
 ```
 
-**Dataset** (shared by both experiments): every PDF under
+**Dataset** (shared by all three experiments): every PDF under
 `sanad/sample_docs/` (10 real Indian rental, freelance, employment, and
 legal-services documents), extracted, chunked by the same clause-aware
 chunker the live app uses, and labeled by running the real rule engine
@@ -147,26 +155,57 @@ data point inside this experiment's own comparison, not swept aside.
   bag-of-words specifically when positive examples are this scarce,
   which is exactly this dataset's situation.
 
+## Experiment 3: threshold tuning (negative)
+
+Experiment 2's logistic regression uses the default 0.5 probability
+cutoff to turn a predicted probability into a "flagged"/"none" call.
+That's an arbitrary choice, not a tuned one — this experiment sweeps it,
+reusing experiment 2's exact pooled leave-one-out probabilities (no new
+model, no new data), to see whether a different cutoff trades a little
+recall for meaningfully better precision.
+
+| threshold | precision | recall | F1 | # predicted flagged |
+|---|---|---|---|---|
+| 0.10 | 0.04 | 1.00 | 0.08 | 322 |
+| 0.20 | 0.07 | 1.00 | 0.13 | 180 |
+| 0.30 | 0.10 | 0.85 | 0.18 | 110 |
+| 0.40 | 0.13 | 0.69 | 0.22 | 69 |
+| **0.50** | **0.18** | **0.62** | **0.28** | 45 |
+| 0.60 | 0.17 | 0.38 | 0.24 | 29 |
+| 0.70 | 0.17 | 0.15 | 0.16 | 12 |
+| 0.80 | 0.00 | 0.00 | 0.00 | 6 |
+| 0.90 | 0.00 | 0.00 | 0.00 | 0 |
+
+**The default 0.5 threshold is already close to the best F1 this dataset
+supports.** Raising it doesn't do what you'd hope: precision barely
+moves (0.18 → 0.17 at 0.6–0.7) while recall collapses (0.62 → 0.15), and
+past 0.8 even the true positives no longer clear the bar, so both
+precision and recall hit zero. There's no hidden better operating point
+being left on the table by using the default — the probabilities
+themselves aren't well-enough separated for a threshold shift alone to
+help. This is consistent with (not a contradiction of) experiment 2's
+own limitations section: the fix has to be more/better labeled data, not
+a knob on the existing model.
+
 ## Concrete next steps
 
-1. **More labeled data still matters most.** Precision (0.18) is the
-   weak point now, not recall — more positive examples, or a
-   human-reviewed pass over `ml/build_dataset.py`'s silver labels, would
-   let the model discriminate flagged-but-different clauses from
-   genuinely risky ones with fewer false alarms.
-2. **A tuned decision threshold** on the logistic regression's predicted
-   probability (rather than the default 0.5) could trade some recall for
-   meaningfully better precision — not tried here to keep this a direct,
-   comparable rerun of experiment 1's method, but a natural next script.
+1. **More labeled data is still the real lever** — now checked and
+   confirmed the only one that plausibly moves precision. More positive
+   examples, or a human-reviewed pass over `ml/build_dataset.py`'s
+   silver labels, would let the model discriminate flagged-but-different
+   clauses from genuinely risky ones; threshold tuning alone (experiment
+   3) can't substitute for that on this data.
+2. ~~**A tuned decision threshold**~~ — done, see experiment 3 above:
+   doesn't help. Worth having actually checked rather than assumed.
 3. **Human-labeled data instead of silver labels** would let this
    experiment test something it structurally cannot yet: whether the
    classifier can find risky clauses the *rules themselves* miss, rather
    than only whether it can imitate the rules it was trained to imitate.
 
-## What neither experiment shows
+## What none of the three experiments show
 
 - Anything about the deterministic rule engine's own accuracy — its
-  outputs are the labels for both experiments, not a ground truth being
-  independently validated.
-- That either result generalizes to a larger or differently-composed
-  dataset — both are measured on the same 10 sample documents.
+  outputs are the labels for all three experiments, not a ground truth
+  being independently validated.
+- That any result generalizes to a larger or differently-composed
+  dataset — all three are measured on the same 10 sample documents.

@@ -169,7 +169,7 @@ and an explicit limitations section rather than hedged language:
 | [`docs/evaluation.md`](docs/evaluation.md) | Sanad's RAG evaluation dataset and scoring, and the CI-style quality gate it feeds |
 | [`docs/contract_intelligence.md`](docs/contract_intelligence.md) | Obligation extraction, coverage, contradictions, and review synthesis |
 | [`docs/research.md`](docs/research.md) | The hypotheses this codebase can actually test, what's been measured vs. not, and concrete next steps |
-| [`docs/ml_experiment.md`](docs/ml_experiment.md) | Two real trained/tested supervised classifier experiments (clause risk severity) — a negative result, a diagnosis of why, and a second experiment that fixes it: 62% recall vs. 0% |
+| [`docs/ml_experiment.md`](docs/ml_experiment.md) | Three real trained/tested supervised classifier experiments (clause risk severity) — a negative result, a diagnosis of why, a second experiment that fixes it (62% recall vs. 0%), and a third checking whether threshold tuning can fix the low precision that remains (it can't) |
 
 ## Honest framing
 

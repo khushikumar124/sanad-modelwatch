@@ -23,7 +23,7 @@ from a bag-of-words representation to generalize to held-out clauses,
 which is a real, useful question if the eventual goal is a classifier
 that catches phrasing the fixed regex patterns don't anticipate.
 
-## Two experiments
+## Three experiments
 
 1. **`train_risk_classifier.py`** — TF-IDF + logistic regression, a
    single train/test split. **Negative result**: statistically
@@ -33,13 +33,19 @@ that catches phrasing the fixed regex patterns don't anticipate.
    cross-validation, three model families compared. **Positive result**:
    logistic regression catches 62% of flagged clauses the first
    experiment missed entirely.
+3. **`threshold_tuning.py`** — sweeps experiment 2's decision cutoff to
+   see if precision (0.18) can be improved for free. **Negative result**:
+   0.5 is already close to the best F1 available; the fix has to be more
+   data, not a different cutoff.
 
-Both are kept, not just the second — *why* the first failed and what
-specifically fixed it (representation, not hyperparameters) is the real
-finding. See [`docs/ml_experiment.md`](../docs/ml_experiment.md) for the
-full measured numbers, both experiments' results, and honest limitations
-of each (in particular: experiment 2's precision is low — it's a
-recall-oriented pre-filter, not a deployable standalone detector).
+All three are kept, not just the flattering one — *why* the first failed
+and what specifically fixed it (representation, not hyperparameters) is
+the real finding, and experiment 3 shows a plausible-sounding quick fix
+that turned out not to work rather than quietly dropping it. See
+[`docs/ml_experiment.md`](../docs/ml_experiment.md) for the full measured
+numbers and honest limitations of each (in particular: experiment 2's
+precision is low — it's a recall-oriented pre-filter, not a deployable
+standalone detector).
 
 ## Running it
 
@@ -51,6 +57,7 @@ python -m ml.build_dataset             # extracts + chunks + rule-flags every
                                         # sample PDF, writes ml/data/clause_risk_dataset_v1.jsonl
 python -m ml.train_risk_classifier     # experiment 1 -> ml/artifacts/{risk_classifier.joblib,results.json}
 python -m ml.train_embeddings_loocv    # experiment 2 -> ml/artifacts/results_embeddings_loocv.json
+python -m ml.threshold_tuning          # experiment 3 -> ml/artifacts/results_threshold_sweep.json
 ```
 
 Tests (fast — synthetic toy data, not the real PDFs or the real

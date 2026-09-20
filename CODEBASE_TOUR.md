@@ -187,7 +187,7 @@ is trained from scratch anywhere in this repo. ModelWatch is deliberately
 even; only its adapters do) — classical statistics, on purpose, so it can
 watch a model without loading one itself. The one place a real supervised
 model *is* trained and tested with a held-out procedure is `ml/`, and
-it's genuinely two experiments, documented in `docs/ml_experiment.md`.
+it's genuinely three experiments, documented in `docs/ml_experiment.md`.
 The first (`train_risk_classifier.py`: TF-IDF, one 75/25 split) is a
 negative result — with only ~10 positive training examples this repo's
 sample contracts provide, the model is statistically identical to a
@@ -198,10 +198,15 @@ first one back — representation and evaluation efficiency, not a
 retrained-until-lucky number — and gets a real positive result: 62%
 recall on flagged clauses vs. 0% before, same labels, same documents.
 Precision is still low (0.18), so it's a recall-oriented pre-filter, not
-a deployable detector — say that unprompted, don't wait to be asked.
-Reporting both experiments, and being precise about what the second one
-does and doesn't prove, is more defensible than either a flattering
-number alone or stopping at the first negative one.
+a deployable detector — say that unprompted, don't wait to be asked. The
+obvious next question, "can you just raise the threshold to fix
+precision," was actually tried, not just claimed impossible:
+`threshold_tuning.py` sweeps the cutoff and finds 0.5 is already close
+to the best F1 available — a third negative result, kept and reported
+rather than left as a shrug. Reporting all three, and being precise
+about what the positive one does and doesn't prove, is more defensible
+than either a flattering number alone or stopping at the first negative
+one.
 
 **"You said ModelWatch is Sanad-independent — is it, really?"**
 It wasn't, technically, until this was caught: `modelwatch/api/app.py`
