@@ -1,11 +1,11 @@
-# Risk-severity classifier: three experiments, one fix that actually mattered
+# Risk-severity classifier: four experiments, two fixes that actually mattered
 
 See [`ml/README.md`](../ml/README.md) for what this experiment is and,
 just as importantly, what it isn't claiming. In short: does a lightweight
 learned model reproduce `sanad/features/risk_flagger.py`'s severity
 labels from clause text alone, on clauses it never saw during training?
 
-**Three experiments, run in this order, all real:**
+**Four experiments, run in this order, all real:**
 
 1. **TF-IDF + a single 75/25 split** ([`ml/train_risk_classifier.py`](../ml/train_risk_classifier.py))
    — **negative result**. The learned model was statistically
@@ -18,8 +18,15 @@ labels from clause text alone, on clauses it never saw during training?
    free, just by moving the decision cutoff. **Negative result**: 0.5
    turns out to already be close to the best F1 available on this data:
    raising the threshold barely moves precision while recall collapses.
+4. **LLM-paraphrase augmentation + leave-one-group-out CV** ([`ml/augment_dataset.py`](../ml/augment_dataset.py), [`ml/train_embeddings_grouped_cv.py`](../ml/train_embeddings_grouped_cv.py))
+   — experiment 3 confirmed the bottleneck was too few positive examples,
+   not a bad cutoff, so this experiment adds more of them the only honest
+   way available (paraphrasing the real ones, not fabricating new risk
+   categories) and evaluates with a CV scheme that can't leak. **Positive
+   result**: precision more than doubles, 0.18 → 0.50, with recall
+   improving too (0.62 → 0.66).
 
-All three are kept and reported, not just the flattering one, because
+All four are kept and reported, not just the flattering ones, because
 *why* the first one failed and what specifically fixed it is the actual
 finding — a positive number on its own, with no failed attempt to
 contrast it against, would tell you nothing about which part of the fix
@@ -33,6 +40,8 @@ python -m ml.build_dataset               # -> ml/data/clause_risk_dataset_v1.jso
 python -m ml.train_risk_classifier       # experiment 1 -> ml/artifacts/{risk_classifier.joblib,results.json}
 python -m ml.train_embeddings_loocv      # experiment 2 -> ml/artifacts/results_embeddings_loocv.json
 python -m ml.threshold_tuning            # experiment 3 -> ml/artifacts/results_threshold_sweep.json
+python -m ml.augment_dataset             # experiment 4 -> ml/data/clause_risk_dataset_v1_augmented.jsonl (needs a local Ollama)
+python -m ml.train_embeddings_grouped_cv # experiment 4 -> ml/artifacts/results_grouped_cv.json
 ```
 
 **Dataset** (shared by all three experiments): every PDF under
@@ -187,25 +196,88 @@ help. This is consistent with (not a contradiction of) experiment 2's
 own limitations section: the fix has to be more/better labeled data, not
 a knob on the existing model.
 
+## Experiment 4: paraphrase augmentation + leave-one-group-out CV (positive)
+
+Experiment 3 confirmed the actual bottleneck was too few positive
+examples for the model to discriminate genuinely risky clauses from
+flagged-but-different ones — not a bad decision threshold. This
+experiment adds more positive examples the only way that doesn't
+involve either downloading contracts of unknown provenance/licensing or
+inventing risk categories that never appeared in a real document: an
+LLM (the same local Ollama model Sanad's own features already depend
+on) rewrites each of the 13 real flagged clauses in different wording,
+4 times each, preserving the exact legal fact (same duration, same
+restriction, same party) — 52 synthetic rows total, every one marked
+`"is_synthetic": true` in [`ml/data/clause_risk_dataset_v1_augmented.jsonl`](../ml/data/clause_risk_dataset_v1_augmented.jsonl).
+
+**The leakage trap this experiment exists to avoid:** a paraphrase of a
+clause is the same underlying fact restated, not independent evidence.
+Plain leave-one-out (experiment 2's method) would let a real clause's
+own paraphrase sit in the training fold while that same clause is held
+out for testing — the model could match near-duplicate phrasing and
+score well without generalizing to anything new, producing a
+fake-looking improvement. Instead, every synthetic row carries a
+`group_id` identical to the real clause it was paraphrased from, and
+evaluation uses **leave-one-group-out** cross-validation: a real clause
+and every one of its own paraphrases are always held out, or trained
+on, together, never split across the train/test boundary. The 571
+"none" clauses (never augmented) are each their own singleton group, so
+for them this is identical to experiment 2's plain leave-one-out — only
+the 13 positive groups actually changed shape.
+
+| | none (precision/recall/F1) | flagged (precision/recall/F1) | macro-F1 |
+|---|---|---|---|
+| majority-class baseline | 0.90 / 1.00 / 0.95 | 0.00 / 0.00 / 0.00 | 0.473 |
+| experiment 2 (no augmentation, LOO-CV) | — | 0.18 / 0.62 / 0.28 | — |
+| **experiment 4, logistic regression (augmented, grouped CV)** | 0.96 / 0.92 / 0.94 | **0.50 / 0.66 / 0.57** | **0.756** |
+| experiment 4, 1-NN (augmented, grouped CV) | 0.92 / 0.98 / 0.95 | 0.62 / 0.25 / 0.35 | 0.651 |
+
+636 total rows (584 real + 52 synthetic), 584 groups, 65/636 positive
+after grouping (up from 13/584 real positives, because each real
+positive now has 4 synthetic siblings inflating its group's row count,
+not its group count).
+
+**What this does and doesn't show:**
+- **Does show**: more labeled positive examples — even synthetic ones
+  derived from real clauses, evaluated so they can't leak — measurably
+  improve this model's ability to separate flagged from unflagged
+  clauses. Precision more than doubled (0.18 → 0.50) without trading
+  away recall (0.62 → 0.66).
+- **Does not show**: performance on genuinely novel risky clauses the
+  paraphraser never saw. Every positive example the model has ever been
+  evaluated on, real or synthetic, still traces back to just 13 original
+  clauses from 10 sample documents — augmentation multiplies phrasing
+  diversity around those 13 facts, it does not add new facts. The real
+  fix identified back in experiment 3 (more *human-labeled* clauses from
+  more documents) remains untried and is still the strongest form of
+  more data.
+- 1-NN got worse on recall with augmentation (0.62 → 0.25) despite
+  the extra data — a reminder that "more data helps" isn't universal
+  across model families; the effect here is specific to logistic
+  regression's use of the whole embedding space rather than only the
+  single nearest neighbor.
+
 ## Concrete next steps
 
-1. **More labeled data is still the real lever** — now checked and
-   confirmed the only one that plausibly moves precision. More positive
-   examples, or a human-reviewed pass over `ml/build_dataset.py`'s
-   silver labels, would let the model discriminate flagged-but-different
-   clauses from genuinely risky ones; threshold tuning alone (experiment
-   3) can't substitute for that on this data.
+1. ~~**More labeled data is still the real lever**~~ — done, see
+   experiment 4 above: paraphrase augmentation of the existing 13
+   positives is a real, measured improvement (0.18 → 0.50 precision).
 2. ~~**A tuned decision threshold**~~ — done, see experiment 3 above:
    doesn't help. Worth having actually checked rather than assumed.
-3. **Human-labeled data instead of silver labels** would let this
-   experiment test something it structurally cannot yet: whether the
-   classifier can find risky clauses the *rules themselves* miss, rather
-   than only whether it can imitate the rules it was trained to imitate.
+3. **Human-labeled data from more documents** (rather than more
+   paraphrases of the same 13 clauses) is the next lever, and the one
+   experiment 4 explicitly can't substitute for: it would let this
+   experiment test something it structurally cannot yet — whether the
+   classifier can find risky clauses the *rules themselves* miss, from
+   genuinely new facts, rather than only recognizing rephrasings of
+   facts it already trained on.
 
-## What none of the three experiments show
+## What none of the four experiments show
 
 - Anything about the deterministic rule engine's own accuracy — its
-  outputs are the labels for all three experiments, not a ground truth
+  outputs are the labels for all four experiments, not a ground truth
   being independently validated.
 - That any result generalizes to a larger or differently-composed
-  dataset — all three are measured on the same 10 sample documents.
+  dataset — all four are measured on the same 10 sample documents (13
+  original positive clauses, with experiment 4 adding phrasing variety
+  around those same 13, not new ones).

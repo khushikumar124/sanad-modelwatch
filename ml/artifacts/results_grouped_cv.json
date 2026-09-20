@@ -1,0 +1,116 @@
+{
+  "method": "sentence-embeddings + leave-one-GROUP-out CV (real clause + its own paraphrases held out together)",
+  "dataset": {
+    "n_total_rows": 636,
+    "n_groups": 584,
+    "n_synthetic_rows": 52,
+    "label_distribution": {
+      "none": 571,
+      "high": 35,
+      "medium": 20,
+      "low": 10
+    },
+    "binary_label_distribution": {
+      "none": 571,
+      "flagged": 65
+    }
+  },
+  "results": {
+    "logistic_regression": {
+      "labels": [
+        "none",
+        "flagged"
+      ],
+      "confusion_matrix": [
+        [
+          528,
+          43
+        ],
+        [
+          22,
+          43
+        ]
+      ],
+      "macro_f1": 0.755776240466471,
+      "per_class": {
+        "none": {
+          "precision": 0.96,
+          "recall": 0.9246935201401051,
+          "f1": 0.9420160570918823,
+          "support": 571.0
+        },
+        "flagged": {
+          "precision": 0.5,
+          "recall": 0.6615384615384615,
+          "f1": 0.5695364238410596,
+          "support": 65.0
+        }
+      },
+      "accuracy": 0.8977987421383647
+    },
+    "1nn": {
+      "labels": [
+        "none",
+        "flagged"
+      ],
+      "confusion_matrix": [
+        [
+          561,
+          10
+        ],
+        [
+          49,
+          16
+        ]
+      ],
+      "macro_f1": 0.6508453443254459,
+      "per_class": {
+        "none": {
+          "precision": 0.919672131147541,
+          "recall": 0.9824868651488616,
+          "f1": 0.9500423370025403,
+          "support": 571.0
+        },
+        "flagged": {
+          "precision": 0.6153846153846154,
+          "recall": 0.24615384615384617,
+          "f1": 0.3516483516483517,
+          "support": 65.0
+        }
+      },
+      "accuracy": 0.9072327044025157
+    },
+    "majority_class_baseline": {
+      "labels": [
+        "none",
+        "flagged"
+      ],
+      "confusion_matrix": [
+        [
+          571,
+          0
+        ],
+        [
+          65,
+          0
+        ]
+      ],
+      "macro_f1": 0.4730737365368683,
+      "per_class": {
+        "none": {
+          "precision": 0.8977987421383647,
+          "recall": 1.0,
+          "f1": 0.9461474730737366,
+          "support": 571.0
+        },
+        "flagged": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 65.0
+        }
+      },
+      "accuracy": 0.8977987421383647
+    }
+  }
+}
