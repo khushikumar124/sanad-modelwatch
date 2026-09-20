@@ -11,11 +11,16 @@ conftest.py) since only the frontend's rendering of *a* grounded answer
 is under test here, not answer quality (that's sanad/tests/test_chatbot.py
 and sanad/evaluation/'s job).
 
-NOT covered here yet: Overview, Summary, and Review. All three run a
-background LLM job and expect the model to return a specific multi-field
-JSON shape (15 Overview fields, obligations, coverage) -- a FakeLLMClient
-faking all three shapes accurately is real additional work, not just more
-of what's already here. Left as a follow-up rather than done badly.
+NOT covered here yet: Overview, Summary, and Review rendering their
+*correct* content. All three run a background LLM job and expect the
+model to return a specific multi-field JSON shape (15 Overview fields,
+obligations, coverage) -- a FakeLLMClient faking all three shapes
+accurately is real additional work, not just more of what's already
+here. Left as a follow-up rather than done badly. The one Overview/
+Review behavior tested below (test_revisiting_overview_before_its_job_
+finishes_does_not_start_a_second_one) doesn't need a correctly-shaped
+response, since it's only checking how many jobs get *started*, not
+what they return -- see the regression this test guards against.
 """
 from __future__ import annotations
 
@@ -126,6 +131,34 @@ def test_asking_a_question_renders_a_grounded_answer_bubble_with_citation(page, 
     page.wait_for_selector(".turn.bot .cite", timeout=10000)
     bot_bubble = page.locator(".turn.bot .bubble").last
     assert "India" in bot_bubble.inner_text()
+
+
+def test_revisiting_overview_before_its_job_finishes_does_not_start_a_second_one(page, live_server):
+    """Regression test for a real bug found live: /overview/job starts a
+    brand-new background LLM job on every call with no server-side
+    dedupe, so switching away from the Overview tab and back (or just
+    clicking it twice) before the first job finished used to start a
+    *second* job for the same document -- whichever finished second
+    silently overwrote whichever rendered first, which looked exactly
+    like "the overview flashed and then vanished". The fix
+    (overviewInFlight in frontend/index.html) doesn't need a correctly
+    shaped LLM response to verify -- it only needs to be right about how
+    many jobs get *started*, not what they return.
+    """
+    page.goto(live_server)
+    page.click(".doc-item >> text=rental_agreement_sample_1.pdf")
+
+    overview_job_requests = []
+    page.on("request", lambda req: overview_job_requests.append(req.url) if "/overview/job" in req.url else None)
+
+    page.click('.nav-item[data-pane="overview"]')
+    page.click('.nav-item[data-pane="risks"]')
+    page.click('.nav-item[data-pane="overview"]')
+    page.click('.nav-item[data-pane="risks"]')
+    page.click('.nav-item[data-pane="overview"]')
+    page.wait_for_timeout(500)  # let any (incorrect) extra request actually get sent before asserting
+
+    assert len(overview_job_requests) == 1
 
 
 def test_mobile_viewport_hides_sidebar_and_collapses_nav_to_horizontal_strip(page, live_server):

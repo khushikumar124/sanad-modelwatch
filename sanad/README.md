@@ -260,6 +260,7 @@ All via environment variables (see `config.py`):
 | `SANAD_UPLOAD_DIR`                | `sanad_uploads`     | Where uploaded files are saved |
 | `SANAD_OLLAMA_BASE_URL`            | `http://localhost:11434` | Ollama server |
 | `SANAD_OLLAMA_MODEL`                | `phi3:3.8b`         | Model Ollama is asked to run |
+| `SANAD_OLLAMA_KEEP_ALIVE`            | `30m`               | How long Ollama keeps the model loaded after a request; below this, a request after a longer idle gap pays a real model-reload cost on top of generation time |
 | `SANAD_AUTH_ENABLED`                 | `false`             | Require sign-in on every API route |
 | `SANAD_SESSION_SECRET`                | *(unset)*           | HMAC key for session cookies; required when auth is on |
 | `SANAD_USERS`                          | *(unset)*           | `name:hash` pairs, comma-separated (see `create_user.py`) |

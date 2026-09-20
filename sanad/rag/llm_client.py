@@ -63,10 +63,11 @@ class OllamaClient(LLMClient):
     quality at the cost of a tighter memory margin and slower responses.
     """
 
-    def __init__(self, model: str | None = None, base_url: str | None = None, num_ctx: int = 4096):
+    def __init__(self, model: str | None = None, base_url: str | None = None, num_ctx: int = 4096, keep_alive: str | None = None):
         self.model = model or config.ollama_model
         self.base_url = base_url or config.ollama_base_url
         self.num_ctx = num_ctx
+        self.keep_alive = keep_alive or config.ollama_keep_alive
 
     def generate(
         self,
@@ -85,6 +86,12 @@ class OllamaClient(LLMClient):
             # low temperature: extraction/grounded QA should be
             # deterministic-leaning, not creative
             "options": {"num_ctx": self.num_ctx, "temperature": 0.1},
+            # Without this, Ollama's own server-wide default (5 minutes)
+            # governs -- keeping the model loaded longer avoids a real,
+            # measured multi-second reload cost on the next request after
+            # any gap longer than that (someone reading a contract between
+            # generating its Overview and asking their first question).
+            "keep_alive": self.keep_alive,
         }
         if response_schema is not None:
             # Constrained decoding. Small models routinely emit not-quite-JSON

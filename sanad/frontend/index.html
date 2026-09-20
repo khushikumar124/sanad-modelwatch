@@ -1446,11 +1446,24 @@ function renderComparison(c) {
 }
 
 /* ---------------- review ---------------- */
-const reviewCache = {};   // doc_id -> {review, obligations, coverage}
+const reviewCache = {};    // doc_id -> {review, obligations, coverage}
+const reviewInFlight = {}; // doc_id -> true while a job is already running for it
 
 async function loadReview(id) {
   const body = document.getElementById("reviewBody");
   if (reviewCache[id]) return renderReview(reviewCache[id]);
+  // /review/job starts a brand-new background LLM job on every call --
+  // it does not dedupe by doc_id server-side. Switching away from this
+  // tab and back (or just clicking it twice) while the first job is
+  // still running used to start a *second* one for the same document;
+  // whichever finished second silently overwrote whichever rendered
+  // first, which looked exactly like "the content flashed and vanished"
+  // (a real bug reported live, not hypothetical). Returning early here
+  // means only one job per document is ever in flight -- the original
+  // call's own `if (currentId === id) renderReview(...)` below still
+  // renders the result whenever the tab is showing this document again.
+  if (reviewInFlight[id]) return;
+  reviewInFlight[id] = true;
   const setProgress = secs => {
     body.innerHTML = '<div class="skel"><div style="width:40%"></div><div style="width:90%"></div><div style="width:70%"></div></div>' +
       '<div class="fineprint" style="margin-top:10px;">Extracting obligations and checking clause coverage — ' +
@@ -1472,7 +1485,11 @@ async function loadReview(id) {
     const data = { review, obligations: review.obligations, coverage };
     reviewCache[id] = data;
     if (currentId === id) renderReview(data);
-  } catch (e) { body.innerHTML = '<p class="none">' + esc(e.message) + '</p>'; }
+  } catch (e) {
+    if (currentId === id) body.innerHTML = '<p class="none">' + esc(e.message) + '</p>';
+  } finally {
+    delete reviewInFlight[id];
+  }
 }
 
 function renderReview(data) {
@@ -1545,9 +1562,19 @@ function renderReview(data) {
 }
 
 /* ---------------- overview ---------------- */
+const overviewInFlight = {}; // doc_id -> true while a job is already running for it
+
 async function loadOverview(id) {
   const body = document.getElementById("overviewBody");
   if (overviewCache[id]) return renderOverview(overviewCache[id]);
+  // Same real bug and same fix as loadReview's reviewInFlight guard,
+  // above: /overview/job starts a fresh background job every call with
+  // no server-side dedupe, so revisiting this tab before the first job
+  // finished used to kick off a second one -- whichever resolved second
+  // silently overwrote whichever rendered first (reported live as
+  // "the overview came and disappeared in under a second").
+  if (overviewInFlight[id]) return;
+  overviewInFlight[id] = true;
   const setProgress = secs => {
     body.innerHTML = '<div class="skel"><div style="width:40%"></div><div style="width:90%"></div><div style="width:70%"></div></div>' +
       '<div class="fineprint" style="margin-top:10px;">Reading the contract for its key terms — ' +
@@ -1559,7 +1586,11 @@ async function loadOverview(id) {
     const overview = await runJob("/documents/" + id + "/overview/job", setProgress);
     overviewCache[id] = overview;
     if (currentId === id) renderOverview(overview);
-  } catch (e) { body.innerHTML = '<p class="none">' + esc(e.message) + '</p>'; }
+  } catch (e) {
+    if (currentId === id) body.innerHTML = '<p class="none">' + esc(e.message) + '</p>';
+  } finally {
+    delete overviewInFlight[id];
+  }
 }
 
 function renderOverview(overview) {

@@ -97,6 +97,15 @@ class Config:
     # with retrieval_top_k=6 scored 0.536 average answer similarity vs
     # 0.458 for llama3.2:3b at top_k=4. Similar size and memory profile.
     ollama_model: str = os.environ.get("SANAD_OLLAMA_MODEL", "phi3:3.8b")
+    # How long Ollama keeps the model loaded in memory after a request,
+    # before evicting it and requiring a full reload (a real, measured
+    # multi-second cost on a 3.8B model) on the next one. Ollama's own
+    # server default is 5 minutes -- short enough that a person reading a
+    # contract for a few minutes between an Overview generation and their
+    # first chat question can pay that reload cost again. Passed through
+    # on every request (llm_client.py) rather than relying on the
+    # server's own default, since that default isn't this app's to set.
+    ollama_keep_alive: str = os.environ.get("SANAD_OLLAMA_KEEP_ALIVE", "30m")
 
     # Authentication. Off by default so tests and a local demo need no
     # credentials; the failure mode is "no login screen", not "locked out".
