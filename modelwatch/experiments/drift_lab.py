@@ -41,7 +41,7 @@ from typing import Any, Callable
 
 from modelwatch.adapters.rag_adapter import RAGAdapter
 from modelwatch.diagnosis.engine import DiagnosisResult, diagnose
-from sanad.evaluation.dataset import EvalCase, load_dataset
+from sanad.evaluation.dataset import EvalCase
 from sanad.features.chatbot import ChatAnswer, ask
 from sanad.ingestion.chunking import chunk_document
 from sanad.ingestion.extraction import extract_document

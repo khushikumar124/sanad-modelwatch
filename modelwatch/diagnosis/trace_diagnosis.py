@@ -49,7 +49,7 @@ actually make.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 RETRIEVAL_MISS = "retrieval_miss"
