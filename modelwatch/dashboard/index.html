@@ -427,7 +427,57 @@ print(result["is_drifted"], result["drift_score"], result["signals"])</pre></div
     </div>
 
     <div class="panel">
-      <h2>4. Monitor it</h2>
+      <h2>4. Or register it right here, no code</h2>
+      <div class="explain">
+        <p>This form calls the exact same <code>POST /models</code> endpoint as the Python snippet above --
+        nothing simulated. Useful for a quick demo model, or to sanity-check your baseline's shape before
+        wiring up the real client in your app. Pick an adapter to load a realistic example baseline you can
+        edit, or paste your own.</p>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
+        <div>
+          <label style="display:block;color:var(--text-3);font-size:11px;margin-bottom:4px;">Model ID (unique)</label>
+          <input id="regModelId" type="text" placeholder="my-rag-app" style="width:100%;box-sizing:border-box;background:var(--panel-2);border:1px solid var(--line);border-radius:6px;padding:7px 11px;font-family:var(--mono);font-size:12px;color:var(--text);" />
+        </div>
+        <div>
+          <label style="display:block;color:var(--text-3);font-size:11px;margin-bottom:4px;">Display name</label>
+          <input id="regName" type="text" placeholder="My RAG App" style="width:100%;box-sizing:border-box;background:var(--panel-2);border:1px solid var(--line);border-radius:6px;padding:7px 11px;font-family:var(--mono);font-size:12px;color:var(--text);" />
+        </div>
+      </div>
+      <div style="display:flex;gap:10px;align-items:center;margin-bottom:10px;">
+        <label style="color:var(--text-3);font-size:11px;">Adapter</label>
+        <select id="regAdapter">
+          <option value="rag">rag</option>
+          <option value="llm">llm</option>
+          <option value="classifier">classifier</option>
+        </select>
+        <button class="linklike" id="regLoadExampleBtn" style="border:1px solid var(--line);border-radius:6px;padding:6px 14px;color:var(--text-2);text-decoration:none;">Load example baseline</button>
+      </div>
+      <label style="display:block;color:var(--text-3);font-size:11px;margin-bottom:4px;">Baseline data (JSON, shape depends on the adapter above)</label>
+      <textarea id="regBaseline" rows="7" style="width:100%;box-sizing:border-box;background:var(--panel-2);border:1px solid var(--line);border-radius:6px;padding:10px 11px;font-family:var(--mono);font-size:11.5px;color:var(--text);resize:vertical;"></textarea>
+      <div style="margin-top:10px;">
+        <button class="linklike" id="regSubmitBtn" style="border:1px solid var(--teal);border-radius:6px;padding:7px 16px;color:var(--teal);text-decoration:none;">Register model</button>
+      </div>
+      <div id="regStatus" style="margin-top:12px;"></div>
+    </div>
+
+    <div class="panel">
+      <h2>5. Send a check, right here too</h2>
+      <div class="explain"><p>Runs a real <code>POST /models/{id}/check</code> against whichever registered
+        model you pick -- the same call the Python client makes -- and shows the actual returned drift
+        verdict and per-signal breakdown below, not a preview.</p></div>
+      <div style="display:flex;gap:10px;align-items:center;margin-bottom:10px;flex-wrap:wrap;">
+        <label style="color:var(--text-3);font-size:11px;">Model</label>
+        <select id="checkModelSelect"><option value="">Loading…</option></select>
+        <button class="linklike" id="checkRunBtn" style="border:1px solid var(--teal);border-radius:6px;padding:6px 14px;color:var(--teal);text-decoration:none;">Run check</button>
+      </div>
+      <label style="display:block;color:var(--text-3);font-size:11px;margin-bottom:4px;">New data (JSON, same shape as the model's baseline)</label>
+      <textarea id="checkData" rows="6" style="width:100%;box-sizing:border-box;background:var(--panel-2);border:1px solid var(--line);border-radius:6px;padding:10px 11px;font-family:var(--mono);font-size:11.5px;color:var(--text);resize:vertical;"></textarea>
+      <div id="checkResult" style="margin-top:12px;"></div>
+    </div>
+
+    <div class="panel">
+      <h2>6. Monitor it</h2>
       <div class="explain"><p>Once registered, your model appears in the picker at the top of this dashboard
         like any other -- Overview, Live Traffic &amp; Drift, and (if you call <code>record_trace</code>) AI
         Debugger all work identically regardless of what produced the telemetry.</p></div>
@@ -661,6 +711,15 @@ async function get(path) {
   const r = await fetch(path);
   if (!r.ok) throw new Error(path + " → " + r.status);
   return r.json();
+}
+
+async function post(path, body) {
+  const r = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  const text = await r.text();
+  let data = null;
+  try { data = text ? JSON.parse(text) : null; } catch { /* non-JSON error body */ }
+  if (!r.ok) throw new Error((data && data.detail) || text || (path + " → " + r.status));
+  return data;
 }
 
 /* Per-adapter presentation. The engine is model-agnostic; this map is the
@@ -1113,6 +1172,17 @@ async function refresh() {
     if (sel) renderSignals(sel);
     loadTraces();
   } catch (e) { console.error("refresh failed", e); }
+
+  /* Pages that otherwise only load once, on nav-click -- re-run whichever
+     one is currently open on the same 8s cadence as everything else, so
+     switching to Registry/Statistics/Embeddings/Connect and leaving it
+     open doesn't go stale while new data comes in elsewhere. */
+  try {
+    if (currentPage === "registry") { loadRegistry(); loadVersions(); }
+    if (currentPage === "statistics") loadStatisticsPage();
+    if (currentPage === "connect") loadConnectStatus();
+    if (currentPage === "embeddings") loadEmbeddings();
+  } catch (e) { console.error("live page refresh failed", e); }
 }
 
 /* ---------------- RAG X-Ray ---------------- */
@@ -1627,10 +1697,109 @@ async function loadConnectStatus() {
         integrationModels.map(m => esc(`${m.name} (${m.model_id}) -- adapter: ${m.adapter_name}`)).join("<br>") +
         '</div>'
       : '<div class="empty" style="margin-top:10px;">No integration-mode models registered yet -- try running examples/independent_rag/run_example.py.</div>');
+    populateCheckModelSelect(models);
   } catch (e) {
     box.innerHTML = '<div class="empty">' + esc(e.message) + '</div>';
   }
 }
+
+/* ---------------- connect: register + check forms (real POST /models,
+   POST /models/{id}/check -- no simulated response anywhere below) ---------------- */
+const REG_EXAMPLE_BASELINES = {
+  rag: JSON.stringify([
+    { grounded: true, citations: 2, citations_requested: 2, retrieval_scores: [0.81, 0.74], generation_latency_ms: 640, question_embedding: [0.02, -0.11, 0.05] },
+    { grounded: true, citations: 1, citations_requested: 1, retrieval_scores: [0.88], generation_latency_ms: 510, question_embedding: [0.03, -0.09, 0.04] },
+    { grounded: false, citations: 0, citations_requested: 1, retrieval_scores: [0.31], generation_latency_ms: 720, question_embedding: [-0.10, 0.22, -0.05] },
+  ], null, 2),
+  llm: JSON.stringify([
+    { prompt: "What is the notice period?", expected_answer: "30 days" },
+    { prompt: "Who is the licensor?", expected_answer: "the property owner named in clause 1" },
+  ], null, 2),
+  classifier: JSON.stringify({
+    features: { age: [23, 45, 31, 29, 38, 42], income: [50000, 62000, 48000, 71000, 55000, 66000] },
+  }, null, 2),
+};
+
+document.getElementById("regAdapter").addEventListener("change", () => {
+  document.getElementById("regBaseline").placeholder = REG_EXAMPLE_BASELINES[document.getElementById("regAdapter").value];
+});
+
+document.getElementById("regLoadExampleBtn").addEventListener("click", () => {
+  document.getElementById("regBaseline").value = REG_EXAMPLE_BASELINES[document.getElementById("regAdapter").value];
+});
+
+document.getElementById("regSubmitBtn").addEventListener("click", async () => {
+  const statusBox = document.getElementById("regStatus");
+  const modelIdVal = document.getElementById("regModelId").value.trim();
+  const nameVal = document.getElementById("regName").value.trim();
+  const adapterVal = document.getElementById("regAdapter").value;
+  const rawBaseline = document.getElementById("regBaseline").value.trim();
+
+  if (!modelIdVal || !nameVal) {
+    statusBox.innerHTML = '<div class="empty">Model ID and display name are both required.</div>';
+    return;
+  }
+  let baselineData;
+  try {
+    baselineData = JSON.parse(rawBaseline || REG_EXAMPLE_BASELINES[adapterVal]);
+  } catch (e) {
+    statusBox.innerHTML = '<div class="empty">Baseline data isn\'t valid JSON: ' + esc(e.message) + '</div>';
+    return;
+  }
+
+  statusBox.innerHTML = '<div class="empty">Registering…</div>';
+  try {
+    const created = await post("/models", { model_id: modelIdVal, name: nameVal, adapter_name: adapterVal, baseline_data: baselineData });
+    statusBox.innerHTML = `<div class="tag clean">Registered "${esc(created.name)}" (${esc(created.model_id)}) -- pick it in the model dropdown above, or in "5. Send a check" below.</div>`;
+    document.getElementById("regModelId").value = "";
+    document.getElementById("regName").value = "";
+    document.getElementById("regBaseline").value = "";
+    loadConnectStatus();
+    loadModels();
+  } catch (e) {
+    statusBox.innerHTML = '<div class="tag drift">' + esc(e.message) + '</div>';
+  }
+});
+
+function populateCheckModelSelect(models) {
+  const sel = document.getElementById("checkModelSelect");
+  const prevValue = sel.value;
+  if (!models.length) {
+    sel.innerHTML = '<option value="">No models registered yet</option>';
+    return;
+  }
+  sel.innerHTML = models.map(m => `<option value="${esc(m.model_id)}" data-adapter="${esc(m.adapter_name)}">${esc(m.name)} (${esc(m.model_id)})</option>`).join("");
+  if (models.some(m => m.model_id === prevValue)) sel.value = prevValue;
+}
+
+document.getElementById("checkRunBtn").addEventListener("click", async () => {
+  const resultBox = document.getElementById("checkResult");
+  const sel = document.getElementById("checkModelSelect");
+  const targetId = sel.value;
+  const adapterVal = sel.selectedOptions[0] ? sel.selectedOptions[0].dataset.adapter : null;
+  const rawData = document.getElementById("checkData").value.trim();
+
+  if (!targetId) { resultBox.innerHTML = '<div class="empty">No model selected.</div>'; return; }
+  let newData;
+  try {
+    newData = JSON.parse(rawData || (adapterVal && REG_EXAMPLE_BASELINES[adapterVal]) || "{}");
+  } catch (e) {
+    resultBox.innerHTML = '<div class="empty">New data isn\'t valid JSON: ' + esc(e.message) + '</div>';
+    return;
+  }
+
+  resultBox.innerHTML = '<div class="empty">Running check…</div>';
+  try {
+    const result = await post(`/models/${encodeURIComponent(targetId)}/check`, { new_data: newData });
+    resultBox.innerHTML = `<div class="tag ${result.is_drifted ? "drift" : "clean"}">${result.is_drifted ? "Drift detected" : "No drift"} -- score ${f3(result.drift_score)}</div>` +
+      '<pre style="margin-top:8px;white-space:pre-wrap;font-family:var(--mono);font-size:11px;color:var(--text-2);">' +
+      esc(JSON.stringify(result.signals, null, 2)) + '</pre>';
+    loadConnectStatus();
+    refresh();
+  } catch (e) {
+    resultBox.innerHTML = '<div class="tag drift">' + esc(e.message) + '</div>';
+  }
+});
 
 /* ---------------- embeddings (real PCA, GET /traces/embeddings) ---------------- */
 let embeddingsChart = null;
